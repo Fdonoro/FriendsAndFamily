@@ -868,6 +868,13 @@
       const recordTimerRef = React.useRef(null);
       const mediaRecorderRef = React.useRef(null);
       const audioChunksRef = React.useRef([]);
+      const messagesEndRef = React.useRef(null);
+
+      const scrollToBottom = (smooth = false) => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+        }
+      };
 
       // Notificaciones Toast globales
       const [toastNotification, setToastNotification] = React.useState(null);
@@ -1968,6 +1975,21 @@
       const totalUnreadChatsCount = visibleChats.reduce((sum, c) => sum + (getUnreadCount(c) > 0 ? 1 : 0), 0);
       const activeChatObj = chats.find(c => c.id === selectedChatId);
 
+      // Auto-scroll al último mensaje al abrir la conversación o recibir mensajes
+      React.useEffect(() => {
+        if (selectedChatId) {
+          scrollToBottom(false);
+          const t = setTimeout(() => scrollToBottom(false), 60);
+          return () => clearTimeout(t);
+        }
+      }, [selectedChatId]);
+
+      React.useEffect(() => {
+        if (activeChatObj?.messages?.length) {
+          scrollToBottom(true);
+        }
+      }, [activeChatObj?.messages?.length]);
+
       const getChatSupervisionDetails = (chat) => {
         if (!currentUser || currentUser.role !== 'parent') return null;
         const isOwn = (chat.participants || []).includes(currentUser.id);
@@ -2398,13 +2420,33 @@
               </div>
 
               <nav className="space-y-1">
+                {/* 1. Familia */}
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('friends'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'friends' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">👥</span>
+                    <span>Familia</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {myIncomingFriendRequests.length > 0 && (
+                      <span className="bg-pink-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                        {myIncomingFriendRequests.length}
+                      </span>
+                    )}
+                    <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{users.length}</span>
+                  </div>
+                </button>
+
+                {/* 2. Chats */}
                 <button
                   onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'chats' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-xl">💬</span>
-                    <span>Mis Chats</span>
+                    <span>Chats</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {totalUnreadChatsCount > 0 && (
@@ -2418,54 +2460,39 @@
                   </div>
                 </button>
 
+                {/* 3. Museo */}
                 <button
                   onClick={() => { SoundFX.playPop(); setActiveTab('museum'); }}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'museum' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-xl">🖼️</span>
-                    <span>El Museo</span>
+                    <span>Museo</span>
                   </div>
                   <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{visiblePosts.length}</span>
                 </button>
 
+                {/* 4. Juego */}
                 <button
                   onClick={() => { SoundFX.playPop(); setActiveTab('game'); }}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'game' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-xl">🦄</span>
-                    <span>Flappy Unicorn</span>
+                    <span>Juego</span>
                   </div>
                   <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Jugar</span>
                 </button>
 
-                <button
-                  onClick={() => { SoundFX.playPop(); setActiveTab('friends'); }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'friends' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">👥</span>
-                    <span>Familia y Amigos</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {myIncomingFriendRequests.length > 0 && (
-                      <span className="bg-pink-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                        {myIncomingFriendRequests.length}
-                      </span>
-                    )}
-                    <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{users.length}</span>
-                  </div>
-                </button>
-
-                {currentUser.role === 'parent' && (
+                {/* 5. Administración */}
+                {currentUser.role === 'parent' ? (
                   <button
                     onClick={() => { SoundFX.playPop(); setActiveTab('parent_tray'); }}
                     className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'parent_tray' ? 'bg-red-500 text-white shadow-md' : 'hover:bg-red-50 text-red-700'}`}
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-xl">🛡️</span>
-                      <span>Supervisión</span>
+                      <span>Administración</span>
                     </div>
                     {myPendingQueue.length > 0 && (
                       <span className="bg-white text-red-600 text-xs font-black px-2 py-0.5 rounded-full shadow-sm">
@@ -2473,26 +2500,40 @@
                       </span>
                     )}
                   </button>
+                ) : (
+                  <button
+                    onClick={() => { SoundFX.playPop(); setActiveTab('settings'); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'settings' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">🎨</span>
+                      <span>Fondo Temático</span>
+                    </div>
+                    <span className="text-sm">{activeTheme.icon}</span>
+                  </button>
                 )}
 
-                <button
-                  onClick={() => { SoundFX.playPop(); setActiveTab('settings'); }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'settings' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">🎨</span>
-                    <span>Fondo Temático</span>
-                  </div>
-                  <span className="text-sm">{activeTheme.icon}</span>
-                </button>
+                {currentUser.role === 'parent' && (
+                  <button
+                    onClick={() => { SoundFX.playPop(); setActiveTab('settings'); }}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-2xl font-bold text-xs text-slate-600 hover:bg-slate-100 transition`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-base">🎨</span>
+                      <span>Cambiar Tema</span>
+                    </div>
+                    <span className="text-xs">{activeTheme.icon}</span>
+                  </button>
+                )}
 
+                {/* 6. Salir */}
                 <div className="pt-2 border-t border-slate-100">
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl font-bold text-xs text-red-600 hover:bg-red-50 transition"
                   >
                     <span>🔒</span>
-                    <span>Cerrar Sesión</span>
+                    <span>Salir</span>
                   </button>
                 </div>
               </nav>
@@ -2725,6 +2766,7 @@
                               </div>
                             );
                           })}
+                          <div ref={messagesEndRef} />
                         </div>
 
                         {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') ? (
@@ -3473,38 +3515,7 @@
           <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 items-center justify-around shadow-2xl transition-all duration-200 ${
             isMobileInChat ? 'hidden' : 'flex'
           }`}>
-            <button
-              onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
-              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'chats' ? 'text-purple-600' : 'text-slate-400'}`}
-            >
-              <span className="text-xl">💬</span>
-              <span className="text-[10px]">Chats</span>
-              {totalUnreadChatsCount > 0 && (
-                <span className="absolute -top-1 right-1 bg-pink-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
-                  {totalUnreadChatsCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => { SoundFX.playPop(); setActiveTab('museum'); }}
-              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition ${activeTab === 'museum' ? 'text-purple-600' : 'text-slate-400'}`}
-            >
-              <span className="text-xl">🖼️</span>
-              <span className="text-[10px]">Museo</span>
-            </button>
-
-            <button
-              onClick={() => {
-                SoundFX.playPop();
-                setShowFullscreenGame(true);
-              }}
-              className="flex flex-col items-center p-1 rounded-xl text-xs font-bold text-purple-600 transform scale-110"
-            >
-              <span className="text-2xl animate-pulse">🦄</span>
-              <span className="text-[10px] font-black">Juego</span>
-            </button>
-
+            {/* 1. Familia */}
             <button
               onClick={() => { SoundFX.playPop(); setActiveTab('friends'); }}
               className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'friends' ? 'text-purple-600' : 'text-slate-400'}`}
@@ -3518,13 +3529,49 @@
               )}
             </button>
 
+            {/* 2. Chats */}
+            <button
+              onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
+              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'chats' ? 'text-purple-600' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">💬</span>
+              <span className="text-[10px]">Chats</span>
+              {totalUnreadChatsCount > 0 && (
+                <span className="absolute -top-1 right-1 bg-pink-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
+                  {totalUnreadChatsCount}
+                </span>
+              )}
+            </button>
+
+            {/* 3. Museo */}
+            <button
+              onClick={() => { SoundFX.playPop(); setActiveTab('museum'); }}
+              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition ${activeTab === 'museum' ? 'text-purple-600' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">🖼️</span>
+              <span className="text-[10px]">Museo</span>
+            </button>
+
+            {/* 4. Juego */}
+            <button
+              onClick={() => {
+                SoundFX.playPop();
+                setShowFullscreenGame(true);
+              }}
+              className="flex flex-col items-center p-1 rounded-xl text-xs font-bold text-purple-600 transform scale-110"
+            >
+              <span className="text-2xl animate-pulse">🦄</span>
+              <span className="text-[10px] font-black">Juego</span>
+            </button>
+
+            {/* 5. Administración */}
             {currentUser.role === 'parent' ? (
               <button
                 onClick={() => { SoundFX.playPop(); setActiveTab('parent_tray'); }}
                 className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'parent_tray' ? 'text-red-600' : 'text-slate-400'}`}
               >
                 <span className="text-xl">🛡️</span>
-                <span className="text-[10px]">Supervisión</span>
+                <span className="text-[10px]">Administración</span>
                 {myPendingQueue.length > 0 && (
                   <span className="absolute top-0 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
                 )}
@@ -3539,6 +3586,7 @@
               </button>
             )}
 
+            {/* 6. Salir */}
             <button
               onClick={handleLogout}
               className="flex flex-col items-center p-1 rounded-xl text-xs font-bold text-red-500 transition"

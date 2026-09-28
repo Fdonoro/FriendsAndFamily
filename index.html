@@ -768,25 +768,25 @@
           ctx.restore();
 
           if (s.status === 'ready') {
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 28px Fredoka, sans-serif';
+            ctx.font = '600 16px Fredoka, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('¡TOCA LA PANTALLA O PULSA ESPACIO!', canvas.width / 2, canvas.height / 2 + 50);
+            ctx.fillText('Toca la pantalla o pulsa espacio para volar ✨', canvas.width / 2, canvas.height / 2 + 40);
           } else if (s.status === 'gameover') {
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 32px Fredoka, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('¡INTÉNTALO OTRA VEZ! 🦄', canvas.width / 2, canvas.height / 2 - 25);
             ctx.font = 'bold 22px Fredoka, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('¡Buen intento! 🦄', canvas.width / 2, canvas.height / 2 - 20);
+            ctx.font = 'bold 18px Fredoka, sans-serif';
             ctx.fillStyle = '#fde047';
-            ctx.fillText(`Puntuación: ${s.currentScore}`, canvas.width / 2, canvas.height / 2 + 15);
-            ctx.font = '16px Quicksand, sans-serif';
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText('Toca la pantalla para reiniciar el vuelo', canvas.width / 2, canvas.height / 2 + 55);
+            ctx.fillText(`Puntos: ${s.currentScore}`, canvas.width / 2, canvas.height / 2 + 12);
+            ctx.font = '500 13px Quicksand, sans-serif';
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillText('Toca para volver a jugar', canvas.width / 2, canvas.height / 2 + 42);
           }
 
           animId = requestAnimationFrame(loop);
@@ -829,9 +829,9 @@
           <div className="absolute bottom-6 left-0 right-0 flex justify-center pointer-events-auto px-4">
             <button
               onClick={jump}
-              className="w-full max-w-md py-4 rounded-3xl bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 text-white font-extrabold text-xl shadow-2xl active:scale-95 transition"
+              className="w-full max-w-xs py-3 rounded-2xl bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 text-white font-bold text-sm shadow-xl active:scale-95 transition flex items-center justify-center gap-2"
             >
-              ¡TOCA AQUÍ PARA SALTAR! 🪽
+              <span>Toca para aletear</span> 🪽
             </button>
           </div>
         </div>
@@ -846,6 +846,7 @@
       const [chats, setChats] = React.useState([]);
       const [leaderboard, setLeaderboard] = React.useState([]);
       const [parentPendingQueue, setParentPendingQueue] = React.useState([]);
+      const [friendships, setFriendships] = React.useState([]);
       const [isLoading, setIsLoading] = React.useState(true);
       const [firebaseUser, setFirebaseUser] = React.useState(null);
       const [currentUserProfile, setCurrentUserProfile] = React.useState(null);
@@ -890,17 +891,20 @@
       const [showFullscreenGame, setShowFullscreenGame] = React.useState(false);
 
       // Formulario para crear nuevo miembro
-      const [newMemberForm, setNewMemberForm] = React.useState({
-        name: '',
-        rawUsername: '',
-        password: '',
-        role: 'parent',
-        userIcon: '🛡️',
-        theme: 'unicorns',
-        relation: ''
-      });
+    const [newMemberForm, setNewMemberForm] = React.useState({
+      name: '',
+      rawUsername: '',
+      password: '',
+      role: 'parent',
+      userIcon: '🛡️',
+      theme: 'unicorns',
+      relation: ''
+    });
 
-      // --- ESCUCHADOR DE SESIÓN ACTIVA ---
+    // Solicitudes de amistad en tiempo real
+    const [friendRequests, setFriendRequests] = React.useState([]);
+
+    // --- ESCUCHADOR DE SESIÓN ACTIVA ---
       React.useEffect(() => {
         if (!auth) {
           setIsLoading(false);
@@ -952,6 +956,7 @@
         let unsubPosts = () => {};
         let unsubLB = () => {};
         let unsubPQ = () => {};
+        let unsubFriendships = () => {};
 
         try {
           unsubUsers = db.collection('users').onSnapshot(snap => {
@@ -987,6 +992,11 @@
               const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
               setParentPendingQueue(list);
             }, (err) => console.warn("Aviso al leer parentQueue:", err.message));
+
+            unsubFriendships = db.collection('friendships').onSnapshot(snap => {
+              const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+              setFriendships(list);
+            }, (err) => console.warn("Aviso al leer amistades:", err.message));
           }
         } catch (e) {
           console.warn("Error en suscripciones a datos:", e);
@@ -998,6 +1008,7 @@
           unsubPosts();
           unsubLB();
           unsubPQ();
+          unsubFriendships();
         };
       }, [firebaseUser]);
 
@@ -1019,6 +1030,21 @@
       // Perfil activo garantizado
       const currentUser = currentUserProfile || users.find(u => u.id === firebaseUser?.uid) || null;
       const activeTheme = (currentUser && THEMES[currentUser.theme]) ? THEMES[currentUser.theme] : THEMES.unicorns;
+
+      // Verificador de si dos usuarios son amigos
+      const areFriends = (u1, u2) => {
+        if (!u1 || !u2) return false;
+        if (u1.id === u2.id) return true;
+        // Los padres y sus propios hijos son amigos siempre de forma automática
+        const isParentOf = (u1.role === 'parent' && (u1.childrenIds || []).includes(u2.id)) ||
+                           (u2.role === 'parent' && (u2.childrenIds || []).includes(u1.id));
+        const isChildOf = (u1.role === 'minor' && (u1.parentIds || []).includes(u2.id)) ||
+                          (u2.role === 'minor' && (u2.parentIds || []).includes(u1.id));
+        if (isParentOf || isChildOf) return true;
+
+        // Amistad mutua confirmada
+        return (u1.friends || []).includes(u2.id) && (u2.friends || []).includes(u1.id);
+      };
 
       // --- CERRAR SESIÓN ---
       const handleLogout = async () => {
@@ -1162,11 +1188,14 @@
               role: newMemberForm.role,
               avatar: newMemberForm.userIcon || '🚀',
               theme: newMemberForm.theme || 'unicorns',
-              createdAt: Date.now()
+              createdAt: Date.now(),
+              friends: []
             };
 
             if (newMemberForm.role === 'minor') {
+              // Asignación directa del padre actual y amistad mutua automática
               newUserData.parentIds = currentUser.role === 'parent' ? [currentUser.id] : [];
+              newUserData.friends = currentUser.role === 'parent' ? [currentUser.id] : [];
             } else if (newMemberForm.role === 'parent') {
               newUserData.childrenIds = [];
             } else if (newMemberForm.role === 'relative') {
@@ -1177,16 +1206,25 @@
 
             if (newMemberForm.role === 'minor' && currentUser.role === 'parent') {
               const updatedChildren = [...(currentUser.childrenIds || []), newUid];
+              const updatedFriends = [...(currentUser.friends || []).filter(f => f !== newUid), newUid];
               await db.collection('users').doc(currentUser.id).update({
-                childrenIds: updatedChildren
+                childrenIds: updatedChildren,
+                friends: updatedFriends
               });
-              setCurrentUserProfile(prev => prev ? { ...prev, childrenIds: updatedChildren } : prev);
+              setCurrentUserProfile(prev => prev ? { ...prev, childrenIds: updatedChildren, friends: updatedFriends } : prev);
             }
 
             await secAuth.signOut();
             SoundFX.playSuccess();
             triggerToast(`¡Cuenta de ${newUserData.name} (${newUserData.username}) creada con éxito!`, '🎉');
           } else {
+            // Registro desde login exterior: SOLO padres o familiares, NUNCA menores
+            if (newMemberForm.role === 'minor') {
+              setModalError('Las cuentas de menores deben ser creadas por su padre o madre desde su perfil.');
+              setIsAuthenticating(false);
+              return;
+            }
+
             const userCredential = await auth.createUserWithEmailAndPassword(internalEmail, newMemberForm.password.trim());
             const newUid = userCredential.user.uid;
 
@@ -1199,11 +1237,14 @@
               role: newMemberForm.role,
               avatar: newMemberForm.userIcon || '🛡️',
               theme: newMemberForm.theme || 'unicorns',
-              createdAt: Date.now()
+              createdAt: Date.now(),
+              friends: []
             };
 
             if (newMemberForm.role === 'parent') {
               newUserData.childrenIds = [];
+            } else if (newMemberForm.role === 'relative') {
+              newUserData.relation = newMemberForm.relation.trim() || 'Familiar';
             }
 
             await db.collection('users').doc(newUid).set(newUserData);
@@ -1467,10 +1508,85 @@
         SoundFX.playSuccess();
       };
 
+      // --- SOLICITUD DE AMISTAD CON DOBLE APROBACIÓN PARENTAL ---
+      const handleSendFriendRequest = async (targetId) => {
+        if (!currentUser || !db || !targetId) return;
+        const targetUser = users.find(u => u.id === targetId);
+        if (!targetUser) return;
+
+        if (areFriends(currentUser, targetUser)) {
+          triggerToast(`Ya sois amigos con ${targetUser.name}`, '👥');
+          return;
+        }
+
+        const existingReq = friendRequests.find(r => 
+          (r.fromId === currentUser.id && r.toId === targetId) ||
+          (r.fromId === targetId && r.toId === currentUser.id)
+        );
+
+        if (existingReq) {
+          triggerToast('Ya existe una solicitud de amistad en proceso', '⏳');
+          return;
+        }
+
+        const reqId = `freq_${currentUser.id}_${targetId}_${Date.now()}`;
+        
+        // Identificar los tutores que deben dar su aprobación
+        const parentIdsToApprove = [];
+        if (currentUser.role === 'minor' && currentUser.parentIds) {
+          parentIdsToApprove.push(...currentUser.parentIds);
+        }
+        if (targetUser.role === 'minor' && targetUser.parentIds) {
+          parentIdsToApprove.push(...targetUser.parentIds);
+        }
+        // Eliminar duplicados
+        const uniqueParentIds = [...new Set(parentIdsToApprove)];
+
+        const newFriendshipReq = {
+          id: reqId,
+          fromId: currentUser.id,
+          fromName: currentUser.name,
+          toId: targetId,
+          toName: targetUser.name,
+          timestamp: 'Ahora',
+          createdAt: Date.now(),
+          requiredParentApprovals: uniqueParentIds,
+          approvedParentIds: [],
+          status: 'pending'
+        };
+
+        // Crear notificación en la cola de los padres correspondientes
+        const parentQueueId = `pq_freq_${reqId}`;
+        const queueItem = {
+          id: parentQueueId,
+          type: 'friendship_permission',
+          friendRequestId: reqId,
+          childId: currentUser.id,
+          targetUserId: targetId,
+          reason: `${currentUser.name} (${currentUser.username}) y ${targetUser.name} (${targetUser.username}) quieren ser amigos.`,
+          timestamp: 'Ahora'
+        };
+
+        try {
+          await db.collection('friendRequests').doc(reqId).set(newFriendshipReq);
+          await db.collection('parentQueue').doc(parentQueueId).set(queueItem);
+          SoundFX.playSuccess();
+          triggerToast(`Solicitud de amistad enviada a supervisión de los padres`, '🛡️');
+        } catch (e) {
+          console.error("Error al solicitar amistad:", e);
+        }
+      };
+
       // --- SOLICITAR APERTURA DE NUEVO CHAT ---
       const handleRequestNewChat = async (targetId) => {
         if (!targetId || !currentUser || !db) return;
         const targetUser = users.find(u => u.id === targetId);
+
+        // REGLA: Los niños solo pueden abrir chat si ya son amigos (o con sus padres)
+        if (!areFriends(currentUser, targetUser)) {
+          triggerToast('Debéis ser amigos aprobados por los padres antes de chatear', '⚠️');
+          return;
+        }
 
         const existing = chats.find(c =>
           (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(targetId)
@@ -1534,7 +1650,48 @@
       const handleApproveParentRequest = async (request) => {
         if (!db) return;
         SoundFX.playSuccess();
-        if (request.type === 'new_chat_permission') {
+        
+        if (request.type === 'friendship_permission') {
+          try {
+            const freqDoc = await db.collection('friendRequests').doc(request.friendRequestId).get();
+            if (freqDoc.exists) {
+              const freqData = freqDoc.data();
+              const currentApprovals = freqData.approvedParentIds || [];
+              const updatedApprovals = [...new Set([...currentApprovals, currentUser.id])];
+              const required = freqData.requiredParentApprovals || [];
+
+              // Comprobar si todos los tutores requeridos han aprobado
+              const allApproved = required.length === 0 || required.every(pId => updatedApprovals.includes(pId));
+
+              if (allApproved) {
+                // Registrar amistad mutua en ambos usuarios
+                const uFromDoc = await db.collection('users').doc(freqData.fromId).get();
+                const uToDoc = await db.collection('users').doc(freqData.toId).get();
+
+                if (uFromDoc.exists && uToDoc.exists) {
+                  const fromFriends = [...(uFromDoc.data().friends || []).filter(f => f !== freqData.toId), freqData.toId];
+                  const toFriends = [...(uToDoc.data().friends || []).filter(f => f !== freqData.fromId), freqData.fromId];
+                  await db.collection('users').doc(freqData.fromId).update({ friends: fromFriends });
+                  await db.collection('users').doc(freqData.toId).update({ friends: toFriends });
+                }
+
+                await db.collection('friendRequests').doc(request.friendRequestId).update({
+                  status: 'approved',
+                  approvedParentIds: updatedApprovals
+                });
+                triggerToast('¡Amistad autorizada mutuamente por los padres!', '👥');
+              } else {
+                await db.collection('friendRequests').doc(request.friendRequestId).update({
+                  approvedParentIds: updatedApprovals
+                });
+                triggerToast('Aprobado por tu parte. Falta la aprobación del tutor del otro menor.', '⏳');
+              }
+            }
+            await db.collection('parentQueue').doc(request.id).delete();
+          } catch (e) {
+            console.error("Error al aprobar amistad:", e);
+          }
+        } else if (request.type === 'new_chat_permission') {
           const chatId = request.chatId;
           try {
             if (chatId) {
@@ -1575,6 +1732,7 @@
               await db.collection('chats').doc(newChatId).set(newChat);
             }
             await db.collection('parentQueue').doc(request.id).delete();
+            triggerToast('Chat aprobado con éxito', '✅');
           } catch (e) {
             console.error("Error al aprobar chat:", e);
           }
@@ -1582,17 +1740,18 @@
           try {
             await db.collection('posts').doc(request.postId).update({ status: 'approved' });
             await db.collection('parentQueue').doc(request.id).delete();
+            triggerToast('Dibujo aprobado para el Museo', '✅');
           } catch (e) {}
         }
-        triggerToast('Solicitud aprobada con éxito', '✅');
       };
 
-      const handleRejectParentRequest = async (requestId, postId = null, chatId = null) => {
+      const handleRejectParentRequest = async (requestId, postId = null, chatId = null, friendRequestId = null) => {
         if (!db) return;
         SoundFX.playPop();
         try {
           if (postId) await db.collection('posts').doc(postId).delete();
           if (chatId) await db.collection('chats').doc(chatId).delete();
+          if (friendRequestId) await db.collection('friendRequests').doc(friendRequestId).delete();
           await db.collection('parentQueue').doc(requestId).delete();
         } catch (e) {}
         triggerToast('Solicitud descartada', '🗑️');
@@ -1610,6 +1769,30 @@
         } catch (e) {}
       };
 
+      // --- VERIFICACIÓN DE AMISTAD (PADRES-HIJOS AUTOMÁTICO O AMISTAD CONFIRMADA) ---
+      const checkAreFriends = (idA, idB) => {
+        if (!idA || !idB) return false;
+        if (idA === idB) return true;
+        const userA = users.find(u => u.id === idA);
+        const userB = users.find(u => u.id === idB);
+        if (!userA || !userB) return false;
+
+        // 1. Padres e hijos son amigos automáticos sin necesidad de solicitud
+        const aIsParentOfB = (userB.parentIds || []).includes(idA) || (userA.childrenIds || []).includes(idB);
+        const bIsParentOfA = (userA.parentIds || []).includes(idB) || (userB.childrenIds || []).includes(idA);
+        if (aIsParentOfB || bIsParentOfA) return true;
+
+        // 2. Amigos presentes en el array de amigos del usuario
+        if ((userA.friends || []).includes(idB) || (userB.friends || []).includes(idA)) return true;
+
+        // 3. Amistad aprobada en la colección 'friendships'
+        return friendships.some(f =>
+          f.status === 'approved' &&
+          ((f.userA === idA && f.userB === idB) || (f.userA === idB && f.userB === idA) ||
+           (Array.isArray(f.participants) && f.participants.includes(idA) && f.participants.includes(idB)))
+        );
+      };
+
       // --- REGLAS DE PRIVACIDAD ---
       const visibleChats = chats.filter(chat => {
         if (!currentUser) return false;
@@ -1622,11 +1805,19 @@
         return (chat.participants || []).includes(currentUser.id);
       });
 
+      // El feed del Museo SOLO pueden verlo los amigos confirmados
       const visiblePosts = posts.filter(post => {
         if (!currentUser) return false;
-        if (currentUser.role === 'parent') return true;
-        if (post.status === 'approved') return true;
-        return post.authorId === currentUser.id;
+        // El autor siempre puede ver su propia obra
+        if (post.authorId === currentUser.id) return true;
+
+        // Los padres pueden ver las obras de sus hijos a cargo para supervisión
+        const isMyChild = (currentUser.childrenIds || []).includes(post.authorId);
+        if (currentUser.role === 'parent' && isMyChild) return true;
+
+        // Para cualquier otro usuario: SÓLO si son amigos confirmados y el post está aprobado
+        const isFriend = checkAreFriends(currentUser.id, post.authorId);
+        return isFriend && post.status === 'approved';
       });
 
       const getUnreadCount = (chat) => {
@@ -1685,7 +1876,7 @@
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-purple-300 animate-in fade-in zoom-in duration-200">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <span>➕</span> {currentUser ? 'Crear Nuevo Miembro' : 'Crear Cuenta'}
+                <span>➕</span> {currentUser ? 'Crear Cuenta para Hijo/a' : 'Registro de Padre o Familiar'}
               </h3>
               <button onClick={() => setShowAddMemberModal(false)} className="text-slate-400 text-xl font-bold">✕</button>
             </div>
@@ -1693,6 +1884,12 @@
             {modalError && (
               <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl">
                 <p className="text-red-600 text-xs font-bold leading-snug">{modalError}</p>
+              </div>
+            )}
+
+            {!currentUser && (
+              <div className="mb-3 p-2.5 bg-purple-50 rounded-xl border border-purple-200 text-[11px] text-purple-900 font-medium">
+                🛡️ Las cuentas de los niños no pueden registrarse aquí. Debe crearlas un padre o tutor una vez iniciada su sesión.
               </div>
             )}
 
@@ -1708,9 +1905,18 @@
                   }}
                   className="w-full p-2.5 rounded-xl border border-slate-300 font-semibold bg-white"
                 >
-                  <option value="parent">Padre / Madre / Tutor</option>
-                  <option value="minor">Hijo/a (Menor a cargo)</option>
-                  <option value="relative">Familiar (Tío/a, Abuelo/a)</option>
+                  {currentUser && currentUser.role === 'parent' ? (
+                    <>
+                      <option value="minor">Hijo/a (Menor a cargo de {currentUser.name})</option>
+                      <option value="relative">Familiar (Tío/a, Abuelo/a)</option>
+                      <option value="parent">Otro Padre / Madre / Tutor</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="parent">Padre / Madre / Tutor</option>
+                      <option value="relative">Familiar Adulto (Tío/a, Abuelo/a)</option>
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -1798,7 +2004,7 @@
                   disabled={isAuthenticating}
                   className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md transition"
                 >
-                  {isAuthenticating ? 'Creando...' : (currentUser ? 'Crear Miembro' : 'Guardar y Entrar')}
+                  {isAuthenticating ? 'Creando...' : (currentUser ? 'Crear Hijo/a' : 'Guardar y Entrar')}
                 </button>
               </div>
             </form>
@@ -2472,7 +2678,7 @@
                       </div>
                       <div>
                         <h2 className="text-xl font-bold text-slate-800">El Museo</h2>
-                        <p className="text-xs text-slate-500 font-medium">Muro artístico vertical familiar.</p>
+                        <p className="text-xs text-slate-500 font-medium">Obras visibles únicamente para tus amigos.</p>
                       </div>
                     </div>
 
@@ -2491,7 +2697,10 @@
                     {visiblePosts.length === 0 ? (
                       <div className="bg-white/80 rounded-3xl p-8 text-center border-2 border-dashed border-purple-200">
                         <span className="text-5xl block mb-2">🎨</span>
-                        <h4 className="font-bold text-slate-700 text-base">El Museo está esperando obras</h4>
+                        <h4 className="font-bold text-slate-700 text-base">No hay obras de amigos todavía</h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                          El Museo es privado: solo muestra publicaciones de amigos confirmados o tus propias obras.
+                        </p>
                       </div>
                     ) : (
                       visiblePosts.map(post => {
@@ -2693,7 +2902,7 @@
                       </div>
                       <div>
                         <h2 className="text-xl font-bold text-slate-800">Círculo Familiar y Amigos</h2>
-                        <p className="text-xs text-slate-500 font-medium">Miembros del círculo familiar.</p>
+                        <p className="text-xs text-slate-500 font-medium">Familia directa y amistades autorizadas por los padres.</p>
                       </div>
                     </div>
 
@@ -2715,7 +2924,7 @@
                         }}
                         className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold text-sm shadow-md flex items-center gap-2 hover:opacity-95 transition"
                       >
-                        <span>➕</span> Crear Cuenta con Contraseña
+                        <span>➕</span> Crear Cuenta de Hijo/a
                       </button>
                     )}
                   </div>
@@ -2735,6 +2944,12 @@
                             const ch = users.find(child => child.id === cid);
                             return `${ch?.name || ''} ${ch?.userIcon || ''}`;
                           }).filter(Boolean);
+
+                          const isFriend = areFriends(currentUser, u);
+                          const isPendingApproval = friendRequests.some(r => 
+                            ((r.fromId === currentUser.id && r.toId === u.id) || (r.fromId === u.id && r.toId === currentUser.id)) &&
+                            r.status === 'pending'
+                          );
 
                           return (
                             <div key={u.id} className="bg-white/95 rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
@@ -2770,27 +2985,41 @@
                                 </div>
                               </div>
 
-                              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                                  <span>🛡️</span> Conectado
-                                </span>
-
-                                <button
-                                  onClick={() => {
-                                    SoundFX.playPop();
-                                    const existing = chats.find(c => (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(u.id));
-                                    if (existing) {
-                                      setSelectedChatId(existing.id);
-                                      setActiveTab('chats');
-                                      triggerToast(`Abriendo conversación con ${u.name}`, '💬');
-                                    } else {
-                                      handleRequestNewChat(u.id);
-                                    }
-                                  }}
-                                  className="px-3.5 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs"
-                                >
-                                  Conversar
-                                </button>
+                              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                                {isFriend ? (
+                                  <>
+                                    <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                                      <span>✅</span> Amigos
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        SoundFX.playPop();
+                                        const existing = chats.find(c => (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(u.id));
+                                        if (existing) {
+                                          setSelectedChatId(existing.id);
+                                          setActiveTab('chats');
+                                          triggerToast(`Abriendo conversación con ${u.name}`, '💬');
+                                        } else {
+                                          handleRequestNewChat(u.id);
+                                        }
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs"
+                                    >
+                                      Conversar
+                                    </button>
+                                  </>
+                                ) : isPendingApproval ? (
+                                  <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 flex items-center gap-1">
+                                    <span>⏳</span> Pendiente de aprobación parental
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleSendFriendRequest(u.id)}
+                                    className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-xs shadow-sm hover:opacity-95 transition flex items-center justify-center gap-1"
+                                  >
+                                    <span>🤝</span> Enviar Solicitud de Amistad
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2844,11 +3073,12 @@
                             <div key={req.id} className="p-4 rounded-2xl border-2 border-purple-100 bg-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                               <div className="flex items-start gap-3">
                                 <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center text-2xl flex-shrink-0">
-                                  {req.type === 'new_chat_permission' ? '💬' : req.type === 'post_approval' ? '🎨' : '🤝'}
+                                  {req.type === 'new_chat_permission' ? '💬' : req.type === 'friendship_permission' ? '🤝' : req.type === 'post_approval' ? '🎨' : '🛡️'}
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-2">
                                     <span className="font-bold text-sm text-slate-800">
+                                      {req.type === 'friendship_permission' && `Solicitud de Amistad: ${child.name} 🤝 ${target?.name || 'Contacto'}`}
                                       {req.type === 'new_chat_permission' && `Permiso de chat para ${child.name} ➡️ ${target?.name || 'Contacto'}`}
                                       {req.type === 'post_approval' && `Dibujo de ${child.name}: "${req.title}"`}
                                     </span>
@@ -2868,7 +3098,7 @@
 
                               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                                 <button
-                                  onClick={() => handleRejectParentRequest(req.id, req.postId, req.chatId)}
+                                  onClick={() => handleRejectParentRequest(req.id, req.postId, req.chatId, req.friendRequestId)}
                                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-red-50 text-red-600 font-bold text-xs"
                                 >
                                   Rechazar
@@ -3068,7 +3298,7 @@
                   <button onClick={() => setShowRequestChatModal(false)} className="text-slate-400 text-lg">✕</button>
                 </div>
                 <div className="space-y-2 mb-4">
-                  <label className="text-xs font-bold text-slate-700 block">Selecciona el contacto:</label>
+                  <label className="text-xs font-bold text-slate-700 block">Selecciona un amigo o familiar:</label>
                   <select
                     className="w-full p-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
                     onChange={(e) => setRequestChatTarget(e.target.value)}
@@ -3076,7 +3306,7 @@
                   >
                     <option value="" disabled>Selecciona un contacto...</option>
                     {users
-                      .filter(u => u.id !== currentUser.id)
+                      .filter(u => u.id !== currentUser.id && areFriends(currentUser, u))
                       .map(u => {
                         const hasChat = chats.some(c => (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(u.id));
                         return (
@@ -3086,6 +3316,11 @@
                         );
                       })}
                   </select>
+                  {users.filter(u => u.id !== currentUser.id && areFriends(currentUser, u)).length === 0 && (
+                    <p className="text-[11px] text-amber-700 font-semibold mt-1">
+                      ⚠️ No tienes amigos confirmados todavía. Envía primero una solicitud de amistad y espera a que los padres la aprueben.
+                    </p>
+                  )}
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
@@ -3094,7 +3329,8 @@
                   >Cancelar</button>
                   <button
                     onClick={() => handleRequestNewChat(requestChatTarget)}
-                    className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow"
+                    disabled={!requestChatTarget}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold shadow rounded-xl"
                   >
                     Abrir o Solicitar
                   </button>

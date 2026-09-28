@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>FriendsAndFamily</title>
 
   <!-- Tailwind CSS CDN -->
@@ -562,7 +562,8 @@
               }
             }
 
-            if (s.unicorn.y > canvas.height - 35 || s.unicorn.y < 20) {
+            // Detección de colisión con los bordes de la pantalla (sin barra de césped)
+            if (s.unicorn.y > canvas.height - 20 || s.unicorn.y < 15) {
               s.status = 'gameover';
               if (currentUser) onUpdateScore(s.currentScore);
             }
@@ -669,11 +670,6 @@
           ctx.arc(-24, 9, 6, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
-
-          ctx.fillStyle = '#22c55e';
-          ctx.fillRect(0, canvas.height - 24, canvas.width, 24);
-          ctx.fillStyle = '#16a34a';
-          ctx.fillRect(0, canvas.height - 24, canvas.width, 6);
 
           if (s.status === 'ready') {
             ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -1056,8 +1052,6 @@
         setIsAuthenticating(true);
 
         try {
-          // Si el padre ya tiene una sesión iniciada, creamos el miembro mediante instancia secundaria
-          // para no cerrar ni alterar la sesión actual del padre
           if (currentUser) {
             const secAuth = getSecondaryAuthInstance();
             const userCredential = await secAuth.createUserWithEmailAndPassword(internalEmail, newMemberForm.password.trim());
@@ -1097,7 +1091,6 @@
             SoundFX.playSuccess();
             triggerToast(`¡Cuenta de ${newUserData.name} (${newUserData.username}) creada con éxito!`, '🎉');
           } else {
-            // Si nos encontramos en la pantalla de bienvenida/login, registramos y entramos directamente
             const userCredential = await auth.createUserWithEmailAndPassword(internalEmail, newMemberForm.password.trim());
             const newUid = userCredential.user.uid;
 
@@ -1352,7 +1345,6 @@
         if (!targetId || !currentUser || !db) return;
         const targetUser = users.find(u => u.id === targetId);
 
-        // Si ya existe una conversación con esta persona (aprobada o pendiente), redirigir directamente
         const existing = chats.find(c =>
           (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(targetId)
         );
@@ -1367,7 +1359,6 @@
         const newChatId = `c_${currentUser.id}_${targetId}_${Date.now()}`;
         const newReqId = `req_chat_${newChatId}`;
 
-        // Crear el chat en estado pendiente para que aparezca de inmediato como 'Solicitada'
         const newChat = {
           id: newChatId,
           participants: [currentUser.id, targetId],
@@ -1435,7 +1426,6 @@
                 messages: [...existingMessages, approvedMsg]
               });
             } else {
-              // Respaldo para solicitudes anteriores
               const target = users.find(u => u.id === request.targetUserId);
               const newChatId = `c_${request.childId}_${request.targetUserId}_${Date.now()}`;
               const newChat = {
@@ -1562,7 +1552,7 @@
         </div>
       ) : null;
 
-      // --- MODAL DE CREAR MIEMBRO / CUENTA (COMPARTIDO) ---
+      // --- MODAL DE CREAR MIEMBRO / CUENTA ---
       const AddMemberModalElement = showAddMemberModal ? (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 text-left">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-purple-300 animate-in fade-in zoom-in duration-200">
@@ -1689,7 +1679,7 @@
         </div>
       ) : null;
 
-      // --- PANTALLA DE ACCESO (CUANDO NO HAY SESIÓN ACTIVA) ---
+      // --- PANTALLA DE ACCESO (SIN SESIÓN) ---
       if (!currentUser) {
         return (
           <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center p-4 select-none relative">
@@ -1704,7 +1694,6 @@
                 Friends<span className="text-pink-500">And</span>Family
               </h1>
 
-              {/* Si existía una sesión anterior pendiente */}
               {firebaseUser && !currentUser && (
                 <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-2xl text-xs text-purple-900 text-center">
                   <p className="font-bold mb-1">Sesión detectada en el dispositivo</p>
@@ -1812,6 +1801,8 @@
       }
 
       // --- APP PRINCIPAL (CON SESIÓN INICIADA) ---
+      const isMobileInChat = activeTab === 'chats' && selectedChatId;
+
       return (
         <div className={`min-h-screen bg-gradient-to-br ${activeTheme.bgGradient} flex flex-col transition-colors duration-500 relative overflow-hidden`}>
           {ToastElement}
@@ -1843,8 +1834,6 @@
           {/* Barra Superior */}
           <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-purple-200/80 shadow-sm px-4 py-3 relative">
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
-
-              {/* Logo */}
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('museum')}>
                 <LayeredBrandIcon />
                 <div className="flex items-center gap-2">
@@ -1854,7 +1843,6 @@
                 </div>
               </div>
 
-              {/* Usuario activo y Cerrar Sesión */}
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-2xl border border-purple-200">
                   <span className="text-xl">{currentUser.userIcon || currentUser.avatar}</span>
@@ -1875,7 +1863,6 @@
               </div>
             </div>
 
-            {/* Subcabecera de relaciones familiares */}
             <div className="max-w-6xl mx-auto mt-2 pt-1 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
               <div className="flex items-center gap-2">
                 <span>
@@ -1917,8 +1904,10 @@
             </div>
           </header>
 
-          {/* Diseño principal */}
-          <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col md:flex-row p-3 md:p-6 gap-6 relative z-10">
+          {/* Diseño principal con padding dinámico en móvil */}
+          <div className={`max-w-6xl mx-auto w-full flex-1 flex flex-col md:flex-row p-2 sm:p-3 md:p-6 gap-6 relative z-10 ${
+            isMobileInChat ? 'pb-2' : 'pb-24 md:pb-6'
+          }`}>
 
             {/* Menú lateral de escritorio */}
             <aside className="hidden md:flex flex-col w-64 bg-white/85 backdrop-blur-md rounded-3xl p-4 shadow-xl border border-white/60 h-fit sticky top-28 gap-2">
@@ -2032,9 +2021,9 @@
             <main className="flex-1 min-w-0">
               {/* VISTA DE CHATS */}
               {activeTab === 'chats' && (
-                <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[630px]">
-                  {/* Lista de Chats */}
-                  <div className="w-full md:w-84 border-r border-slate-200 flex flex-col bg-slate-50/70">
+                <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[calc(100dvh-130px)] min-h-[480px] md:h-[630px]">
+                  {/* Lista de Chats (Se oculta en móvil cuando hay un chat abierto) */}
+                  <div className={`w-full md:w-84 border-r border-slate-200 flex flex-col bg-slate-50/70 h-full ${selectedChatId ? 'hidden md:flex' : 'flex'}`}>
                     <div className="p-3.5 border-b border-slate-200">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -2166,18 +2155,28 @@
                   </div>
 
                   {/* Panel del Chat Activo */}
-                  <div className="flex-1 flex flex-col bg-white">
+                  <div className={`flex-1 flex flex-col bg-white h-full ${selectedChatId ? 'flex' : 'hidden md:flex'}`}>
                     {activeChatObj ? (
                       <>
                         <div className="p-3 px-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2">
+                            {/* Botón de retorno al listado de chats para móviles */}
+                            <button
+                              onClick={() => { SoundFX.playPop(); setSelectedChatId(null); }}
+                              className="md:hidden px-2.5 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-xl text-xs font-black flex items-center gap-1 active:scale-95 transition mr-1"
+                              title="Volver a la lista de conversaciones"
+                            >
+                              <span>⬅️</span>
+                              <span>Atrás</span>
+                            </button>
+
                             <span className="text-2xl">💬</span>
                             <div>
                               <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-sm text-slate-800">{activeChatObj.title}</h3>
+                                <h3 className="font-bold text-sm text-slate-800 truncate max-w-[150px] sm:max-w-none">{activeChatObj.title}</h3>
                                 {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') ? (
                                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
-                                    ⏳ Solicitud Pendiente
+                                    ⏳ Pendiente
                                   </span>
                                 ) : (
                                   currentUser.role === 'parent' && (
@@ -2192,7 +2191,7 @@
                         </div>
 
                         {/* Mensajes */}
-                        <div className="flex-1 overflow-y-auto custom-scroll p-4 space-y-3 bg-slate-50/30">
+                        <div className="flex-1 overflow-y-auto custom-scroll p-3 sm:p-4 space-y-3 bg-slate-50/30">
                           {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') && (
                             <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-200 text-center mb-3">
                               <span className="text-3xl block mb-1">⏳</span>
@@ -2221,11 +2220,11 @@
                             return (
                               <div key={m.id} className={`flex gap-2 items-end ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && (
-                                  <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center text-sm mb-1">
+                                  <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center text-sm mb-1 flex-shrink-0">
                                     {sender.userIcon || sender.avatar}
                                   </div>
                                 )}
-                                <div className={`max-w-[75%] rounded-3xl p-3 px-4 shadow-sm ${isMe ? activeTheme.bubbleSelf : 'bg-white border border-slate-200 text-slate-800'}`}>
+                                <div className={`max-w-[85%] sm:max-w-[75%] rounded-3xl p-3 px-4 shadow-sm ${isMe ? activeTheme.bubbleSelf : 'bg-white border border-slate-200 text-slate-800'}`}>
                                   {!isMe && (
                                     <span className="text-[10px] block font-bold text-slate-400 mb-0.5">
                                       {sender.name} {sender.username ? `(${sender.username})` : ''}
@@ -2235,7 +2234,7 @@
                                   {m.isAudio ? (
                                     <div className="flex items-center gap-3 py-1">
                                       {m.audioData ? (
-                                        <audio controls src={m.audioData} className="h-8 max-w-[200px]" />
+                                        <audio controls src={m.audioData} className="h-8 max-w-[190px]" />
                                       ) : (
                                         <div className="flex items-center gap-2">
                                           <span className="text-lg">🎤</span>
@@ -2266,8 +2265,8 @@
                         ) : (
                           <>
                             {/* Pegatinas */}
-                            <div className="px-4 py-1.5 bg-slate-100 border-t border-slate-200 flex items-center gap-2 overflow-x-auto">
-                              <span className="text-[11px] font-bold text-slate-400">Pegatinas:</span>
+                            <div className="px-3 sm:px-4 py-1.5 bg-slate-100 border-t border-slate-200 flex items-center gap-2 overflow-x-auto">
+                              <span className="text-[11px] font-bold text-slate-400 flex-shrink-0">Pegatinas:</span>
                               {['🌟', '🎉', '🦄', '❤️', '🍦', '🚀', '⚽', '🎨'].map(sticker => (
                                 <button
                                   key={sticker}
@@ -2279,24 +2278,24 @@
                               ))}
                             </div>
 
-                            {/* Barra de entrada */}
-                            <div className="p-3 border-t border-slate-200 flex items-center gap-2 bg-white">
+                            {/* Barra de entrada de texto y audio */}
+                            <div className="p-2 sm:p-3 border-t border-slate-200 flex items-center gap-2 bg-white">
                               {isRecordingAudio ? (
-                                <div className="flex-1 flex items-center justify-between bg-purple-50 px-4 py-2 rounded-2xl border border-purple-300">
+                                <div className="flex-1 flex items-center justify-between bg-purple-50 px-3 sm:px-4 py-2 rounded-2xl border border-purple-300">
                                   <div className="flex items-center gap-2">
                                     <span className="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
-                                    <span className="text-xs font-bold text-purple-800">Grabando audio: {recordingSeconds}s</span>
+                                    <span className="text-xs font-bold text-purple-800">Grabando: {recordingSeconds}s</span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => setIsRecordingAudio(false)}
-                                      className="px-3 py-1 bg-slate-200 text-xs font-bold text-slate-600 rounded-xl"
+                                      className="px-2.5 py-1 bg-slate-200 text-xs font-bold text-slate-600 rounded-xl"
                                     >Cancelar</button>
                                     <button
                                       onClick={stopRealAudioRecording}
-                                      className="px-4 py-1 bg-purple-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow"
+                                      className="px-3 sm:px-4 py-1 bg-purple-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow"
                                     >
-                                      <span>🚀</span> Enviar Nota
+                                      <span>🚀</span> Enviar
                                     </button>
                                   </div>
                                 </div>
@@ -2308,12 +2307,12 @@
                                     onChange={(e) => setMessageInput(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                                     placeholder="Escribe un mensaje..."
-                                    className="flex-1 bg-slate-100 px-4 py-2.5 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                    className="flex-1 bg-slate-100 px-3.5 py-2.5 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-400"
                                   />
 
                                   <button
                                     onClick={startRealAudioRecording}
-                                    className="p-2.5 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded-2xl text-sm font-bold shadow-sm transition"
+                                    className="p-2.5 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded-2xl text-sm font-bold shadow-sm transition active:scale-95 flex-shrink-0"
                                     title="Grabar nota de voz"
                                   >
                                     🎤
@@ -2321,7 +2320,7 @@
 
                                   <button
                                     onClick={() => handleSendMessage()}
-                                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold text-sm shadow-md transition"
+                                    className="px-4 sm:px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold text-sm shadow-md transition active:scale-95 flex-shrink-0"
                                   >
                                     Enviar
                                   </button>
@@ -2366,7 +2365,6 @@
                     )}
                   </div>
 
-                  {/* Feed vertical */}
                   <div className="flex flex-col space-y-6">
                     {visiblePosts.length === 0 ? (
                       <div className="bg-white/80 rounded-3xl p-8 text-center border-2 border-dashed border-purple-200">
@@ -2842,8 +2840,10 @@
             </main>
           </div>
 
-          {/* Barra de navegación inferior móvil */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+          {/* Barra de navegación inferior móvil (Se oculta inteligentemente al entrar en un chat) */}
+          <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 items-center justify-around shadow-2xl transition-all duration-200 ${
+            isMobileInChat ? 'hidden' : 'flex'
+          }`}>
             <button
               onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
               className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'chats' ? 'text-purple-600' : 'text-slate-400'}`}

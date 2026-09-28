@@ -1,0 +1,2992 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FriendsAndFamily</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Fredoka & Quicksand -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <!-- React 18 & Babel Standalone CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Firebase SDK (v10 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    body {
+      font-family: 'Fredoka', 'Quicksand', sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: contain;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.15);
+      border-radius: 999px;
+    }
+    @keyframes float-icon {
+      0% { transform: translateY(0px) rotate(0deg); opacity: 0.16; }
+      50% { transform: translateY(-28px) rotate(8deg); opacity: 0.28; }
+      100% { transform: translateY(0px) rotate(0deg); opacity: 0.16; }
+    }
+    .floating-bg-item {
+      animation: float-icon 6.5s ease-in-out infinite;
+      position: absolute;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased overflow-x-hidden min-h-screen relative">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // --- CONFIGURACIÓN DE CONEXIÓN ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDwBouciZVyTkJNUjbxIKY1245CBHLpPAI",
+      authDomain: "friendsandfamily-47943.firebaseapp.com",
+      projectId: "friendsandfamily-47943",
+      storageBucket: "friendsandfamily-47943.firebasestorage.app",
+      messagingSenderId: "745933856945",
+      appId: "1:745933856945:web:173eeddc74ea6225a20290",
+      measurementId: "G-HNGJKVYMED"
+    };
+
+    let auth = null;
+    let db = null;
+
+    try {
+      if (typeof firebase !== 'undefined') {
+        const fbApp = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
+        auth = firebase.auth();
+        db = firebase.firestore();
+      }
+    } catch (e) {
+      console.error("Error al inicializar servicios:", e);
+    }
+
+    // Instancia secundaria para registrar nuevos miembros sin cerrar la sesión activa del padre
+    const getSecondaryAuthInstance = () => {
+      let secApp = firebase.apps.find(app => app.name === 'SecondaryAdminApp');
+      if (!secApp) {
+        secApp = firebase.initializeApp(firebaseConfig, 'SecondaryAdminApp');
+      }
+      return secApp.auth();
+    };
+
+    // Conversor seguro y transparente a formato interno de correo electrónico
+    const usernameToFakeEmail = (rawUsername) => {
+      if (!rawUsername) return '';
+      const clean = rawUsername.toString().toLowerCase().replace(/@/g, '').replace(/[^a-z0-9_.-]/g, '').trim();
+      return `${clean || 'user'}@familyapp.com`;
+    };
+
+    // Polyfill defensivo para canvas.roundRect
+    if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+        if (!Array.isArray(radii)) radii = [radii || 0];
+        const r = radii[0] || 0;
+        this.beginPath();
+        this.moveTo(x + r, y);
+        this.arcTo(x + w, y, x + w, y + h, r);
+        this.arcTo(x + w, y + h, x, y + h, r);
+        this.arcTo(x, y + h, x, y, r);
+        this.arcTo(x, y, x + w, y, r);
+        this.closePath();
+        return this;
+      };
+    }
+
+    // --- EFECTOS DE SONIDO SINTETIZADOS ---
+    const SoundFX = {
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+      },
+      playPop() {
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(460, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(850, this.ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.08);
+        } catch (e) {}
+      },
+      playJump() {
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(280, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(620, this.ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.22, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.15);
+        } catch (e) {}
+      },
+      playSuccess() {
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const notes = [440, 554.37, 659.25, 880];
+          notes.forEach((freq, i) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.value = freq;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.18, this.ctx.currentTime + i * 0.07);
+            gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + i * 0.07 + 0.18);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(this.ctx.currentTime + i * 0.07);
+            osc.stop(this.ctx.currentTime + i * 0.07 + 0.2);
+          });
+        } catch (e) {}
+      },
+      playScore() {
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, this.ctx.currentTime);
+          osc.frequency.setValueAtTime(880, this.ctx.currentTime + 0.06);
+          gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.18);
+        } catch (e) {}
+      }
+    };
+
+    // --- TEMAS VISUALES ---
+    const THEMES = {
+      unicorns: {
+        id: 'unicorns',
+        name: 'Unicornios',
+        icon: '🦄',
+        bgGradient: 'from-purple-100 via-pink-100 to-indigo-100',
+        primary: 'bg-purple-600 hover:bg-purple-700 text-white',
+        bubbleSelf: 'bg-gradient-to-r from-purple-500 to-pink-500 text-white',
+        floatingIcons: ['🦄', '✨', '🌈', '⭐', '🦄', '🌟', '🦄', '✨']
+      },
+      dogs: {
+        id: 'dogs',
+        name: 'Perritos',
+        icon: '🐶',
+        bgGradient: 'from-amber-100 via-orange-100 to-yellow-100',
+        primary: 'bg-amber-600 hover:bg-amber-700 text-white',
+        bubbleSelf: 'bg-gradient-to-r from-amber-500 to-orange-500 text-white',
+        floatingIcons: ['🐶', '🐾', '🦴', '🐾', '🐶', '🎾', '🐾', '🦴']
+      },
+      cats: {
+        id: 'cats',
+        name: 'Gatitos',
+        icon: '🐱',
+        bgGradient: 'from-teal-100 via-emerald-100 to-cyan-100',
+        primary: 'bg-teal-600 hover:bg-teal-700 text-white',
+        bubbleSelf: 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white',
+        floatingIcons: ['🐱', '🐾', '🧶', '🐟', '🐱', '🐾', '🧶', '🐾']
+      },
+      hearts: {
+        id: 'hearts',
+        name: 'Corazones',
+        icon: '💖',
+        bgGradient: 'from-rose-100 via-red-100 to-pink-100',
+        primary: 'bg-rose-500 hover:bg-rose-600 text-white',
+        bubbleSelf: 'bg-gradient-to-r from-rose-500 to-pink-600 text-white',
+        floatingIcons: ['💖', '💕', '❤️', '💌', '💖', '🌸', '💖', '💕']
+      }
+    };
+
+    // --- ICONO DE MARCA EN CAPAS ---
+    const LayeredBrandIcon = () => (
+      <div className="relative w-12 h-12 flex items-center justify-center cursor-pointer group">
+        <div className="absolute inset-0 bg-gradient-to-tr from-purple-400 to-pink-500 rounded-2xl blur-sm opacity-50 group-hover:opacity-75 transition" />
+        <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 flex items-center justify-center shadow-lg border border-white/40 overflow-hidden">
+          <svg className="absolute -top-0.5 -right-0.5 w-8 h-8 text-white/40 transform translate-x-1 -translate-y-1" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+          </svg>
+          <div className="relative z-10 transform -translate-x-1 translate-y-1 drop-shadow-md">
+            <svg className="w-6 h-6 text-yellow-300" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+            <span className="absolute -top-1.5 -right-1 text-[11px] leading-none text-white drop-shadow">✨</span>
+          </div>
+        </div>
+      </div>
+    );
+
+    // --- LIENZO DE DIBUJO ---
+    const MiniCanvasPainter = ({ onSave, onCancel }) => {
+      const canvasRef = React.useRef(null);
+      const [isDrawing, setIsDrawing] = React.useState(false);
+      const [brushColor, setBrushColor] = React.useState('#ec4899');
+      const [brushSize, setBrushSize] = React.useState(7);
+      const [title, setTitle] = React.useState('');
+      const [description, setDescription] = React.useState('');
+      const [validationError, setValidationError] = React.useState('');
+
+      React.useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }, []);
+
+      const getPos = (e) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches && e.touches[0] ? e.touches[0] : (e.changedTouches ? e.changedTouches[0] : null);
+        const clientX = touch ? touch.clientX : e.clientX;
+        const clientY = touch ? touch.clientY : e.clientY;
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY
+        };
+      };
+
+      const startDraw = (e) => {
+        e.preventDefault();
+        SoundFX.playPop();
+        setIsDrawing(true);
+        const { x, y } = getPos(e);
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      };
+
+      const draw = (e) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const { x, y } = getPos(e);
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = brushColor;
+        ctx.lineWidth = brushSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      };
+
+      const stopDraw = () => setIsDrawing(false);
+
+      const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        SoundFX.playPop();
+      };
+
+      const handleConfirm = () => {
+        if (!title.trim()) {
+          setValidationError('Por favor escribe el título de tu obra antes de enviarla');
+          return;
+        }
+        setValidationError('');
+        const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.82);
+        SoundFX.playSuccess();
+        onSave({ title, description, imageUrl: dataUrl });
+      };
+
+      return (
+        <div className="bg-white rounded-3xl p-5 shadow-2xl border-4 border-purple-200 max-w-lg w-full mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xl font-bold text-purple-700 flex items-center gap-2">
+              <span>🎨</span> Taller de Dibujo
+            </h3>
+            <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 p-1 text-xl">✕</button>
+          </div>
+
+          <div className="border-4 border-dashed border-purple-200 rounded-2xl overflow-hidden bg-white shadow-inner flex justify-center items-center touch-none">
+            <canvas
+              ref={canvasRef}
+              width={450}
+              height={320}
+              className="w-full h-auto cursor-crosshair bg-white"
+              onMouseDown={startDraw}
+              onMouseMove={draw}
+              onMouseUp={stopDraw}
+              onMouseLeave={stopDraw}
+              onTouchStart={startDraw}
+              onTouchMove={draw}
+              onTouchEnd={stopDraw}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-2 mt-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              {['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#1f2937'].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setBrushColor(c)}
+                  className={`w-7 h-7 rounded-full border-2 border-white shadow-md ${brushColor === c ? 'scale-125 ring-2 ring-purple-500' : 'hover:scale-110'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setBrushSize(4)} className={`px-2 py-1 rounded-lg text-xs font-bold ${brushSize === 4 ? 'bg-purple-100 text-purple-700 border border-purple-300' : 'bg-slate-100'}`}>Fino</button>
+              <button onClick={() => setBrushSize(8)} className={`px-2 py-1 rounded-lg text-xs font-bold ${brushSize === 8 ? 'bg-purple-100 text-purple-700 border border-purple-300' : 'bg-slate-100'}`}>Medio</button>
+              <button onClick={() => setBrushSize(18)} className={`px-2 py-1 rounded-lg text-xs font-bold ${brushSize === 18 ? 'bg-purple-100 text-purple-700 border border-purple-300' : 'bg-slate-100'}`}>Grueso</button>
+              <button onClick={clearCanvas} className="px-2 py-1 bg-red-100 text-red-600 rounded-lg text-xs font-bold hover:bg-red-200">Borrar</button>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <input
+              type="text"
+              placeholder="Título de tu obra..."
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (validationError) setValidationError('');
+              }}
+              className="w-full px-4 py-2 rounded-xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm font-semibold"
+            />
+            <textarea
+              rows="2"
+              placeholder="Descripción o dedicatoria..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-2 rounded-xl border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm resize-none"
+            />
+            {validationError && (
+              <p className="text-red-500 font-bold text-xs">{validationError}</p>
+            )}
+          </div>
+
+          <div className="mt-4 flex gap-2 justify-end">
+            <button onClick={onCancel} className="px-4 py-2 rounded-xl bg-slate-200 font-bold text-slate-700 text-sm">Cancelar</button>
+            <button onClick={handleConfirm} className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-sm shadow-lg">
+              Enviar a Supervisión
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // --- FLAPPY UNICORN A PANTALLA COMPLETA ---
+    const FullscreenFlappyUnicorn = ({ currentUser, leaderboard, onUpdateScore, onClose }) => {
+      const canvasRef = React.useRef(null);
+      const [score, setScore] = React.useState(0);
+      const [highScore, setHighScore] = React.useState(
+        leaderboard.find(l => l.userId === currentUser?.id)?.score || 0
+      );
+
+      const stateRef = React.useRef({
+        unicorn: { y: 220, vy: 0, rot: 0 },
+        pipes: [],
+        stars: [],
+        particles: [],
+        frameCount: 0,
+        currentScore: 0,
+        status: 'ready'
+      });
+
+      const jump = () => {
+        const s = stateRef.current;
+        if (s.status === 'ready') {
+          s.status = 'playing';
+          s.unicorn = { y: 240, vy: -5.8, rot: -0.25 };
+          s.pipes = [];
+          s.particles = [];
+          s.currentScore = 0;
+          setScore(0);
+          SoundFX.playJump();
+          return;
+        }
+        if (s.status === 'playing') {
+          s.unicorn.vy = -5.8;
+          SoundFX.playJump();
+          for (let i = 0; i < 7; i++) {
+            s.particles.push({
+              x: 100,
+              y: s.unicorn.y + 10,
+              vx: -(Math.random() * 2.8 + 1),
+              vy: (Math.random() - 0.5) * 3.5,
+              alpha: 1,
+              color: ['#f472b6', '#c084fc', '#fde047', '#38bdf8', '#ffffff'][Math.floor(Math.random() * 5)],
+              size: Math.random() * 5 + 3
+            });
+          }
+        } else if (s.status === 'gameover') {
+          s.status = 'ready';
+          SoundFX.playPop();
+        }
+      };
+
+      React.useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (e.code === 'Space') {
+            e.preventDefault();
+            jump();
+          } else if (e.code === 'Escape') {
+            onClose();
+          }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, []);
+
+      React.useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let animId;
+
+        const bgStars = [];
+        for (let i = 0; i < 40; i++) {
+          bgStars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 3 + 1.2,
+            speed: Math.random() * 0.5 + 0.2
+          });
+        }
+        stateRef.current.stars = bgStars;
+
+        const loop = () => {
+          const s = stateRef.current;
+          s.frameCount++;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+          skyGrad.addColorStop(0, '#3b0764');
+          skyGrad.addColorStop(0.4, '#6b21a8');
+          skyGrad.addColorStop(0.8, '#be185d');
+          skyGrad.addColorStop(1, '#f43f5e');
+          ctx.fillStyle = skyGrad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.fillStyle = '#ffffff';
+          s.stars.forEach(st => {
+            if (s.status === 'playing') {
+              st.x -= st.speed;
+              if (st.x < 0) st.x = canvas.width;
+            }
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.arc(st.x, st.y, st.size, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.globalAlpha = 1.0;
+
+          if (s.status === 'playing') {
+            s.unicorn.vy += 0.22;
+            s.unicorn.y += s.unicorn.vy;
+            s.unicorn.rot = Math.min(Math.PI / 5, Math.max(-Math.PI / 5, s.unicorn.vy * 0.05));
+
+            if (s.frameCount % 110 === 0) {
+              const gap = 260;
+              const minPipe = 40;
+              const maxPipe = Math.max(minPipe + 20, canvas.height - gap - minPipe - 55);
+              const topH = Math.floor(Math.random() * (maxPipe - minPipe + 1)) + minPipe;
+              s.pipes.push({
+                x: canvas.width,
+                top: topH,
+                bottom: canvas.height - topH - gap,
+                passed: false
+              });
+            }
+
+            const uX = 100;
+            const uY = s.unicorn.y;
+            const uRadius = 18;
+
+            for (let i = s.pipes.length - 1; i >= 0; i--) {
+              const p = s.pipes[i];
+              p.x -= 2.1;
+
+              if (!p.passed && p.x + 65 < uX) {
+                p.passed = true;
+                s.currentScore += 1;
+                setScore(s.currentScore);
+                SoundFX.playScore();
+                if (s.currentScore > highScore) {
+                  setHighScore(s.currentScore);
+                  if (currentUser) onUpdateScore(s.currentScore);
+                }
+              }
+
+              if (uX + uRadius > p.x && uX - uRadius < p.x + 65) {
+                if (uY - uRadius < p.top || uY + uRadius > canvas.height - p.bottom) {
+                  s.status = 'gameover';
+                  if (currentUser) onUpdateScore(s.currentScore);
+                }
+              }
+
+              if (p.x < -80) {
+                s.pipes.splice(i, 1);
+              }
+            }
+
+            if (s.unicorn.y > canvas.height - 35 || s.unicorn.y < 20) {
+              s.status = 'gameover';
+              if (currentUser) onUpdateScore(s.currentScore);
+            }
+          }
+
+          s.pipes.forEach(p => {
+            const grad = ctx.createLinearGradient(p.x, 0, p.x + 65, 0);
+            grad.addColorStop(0, '#f43f5e');
+            grad.addColorStop(0.3, '#fbbf24');
+            grad.addColorStop(0.7, '#38bdf8');
+            grad.addColorStop(1, '#a855f7');
+            ctx.fillStyle = grad;
+
+            if (ctx.roundRect) {
+              ctx.beginPath();
+              ctx.roundRect(p.x, 0, 65, p.top, [0, 0, 16, 16]);
+              ctx.fill();
+
+              const bY = canvas.height - p.bottom;
+              ctx.beginPath();
+              ctx.roundRect(p.x, bY, 65, p.bottom, [16, 16, 0, 0]);
+              ctx.fill();
+            } else {
+              ctx.fillRect(p.x, 0, 65, p.top);
+              ctx.fillRect(p.x, canvas.height - p.bottom, 65, p.bottom);
+            }
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(p.x + 16, p.top, 14, 0, Math.PI * 2);
+            ctx.arc(p.x + 33, p.top + 3, 16, 0, Math.PI * 2);
+            ctx.arc(p.x + 50, p.top, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            const bY = canvas.height - p.bottom;
+            ctx.beginPath();
+            ctx.arc(p.x + 16, bY, 14, 0, Math.PI * 2);
+            ctx.arc(p.x + 33, bY - 3, 16, 0, Math.PI * 2);
+            ctx.arc(p.x + 50, bY, 14, 0, Math.PI * 2);
+            ctx.fill();
+          });
+
+          for (let i = s.particles.length - 1; i >= 0; i--) {
+            const pt = s.particles[i];
+            pt.x += pt.vx;
+            pt.y += pt.vy;
+            pt.alpha -= 0.025;
+            if (pt.alpha <= 0) {
+              s.particles.splice(i, 1);
+              continue;
+            }
+            ctx.save();
+            ctx.globalAlpha = pt.alpha;
+            ctx.fillStyle = pt.color;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          ctx.save();
+          const uniY = s.status === 'ready' ? 240 + Math.sin(s.frameCount * 0.08) * 10 : s.unicorn.y;
+          ctx.translate(100, uniY);
+          ctx.rotate(s.status === 'ready' ? 0 : s.unicorn.rot);
+
+          ctx.fillStyle = '#c084fc';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 24, 18, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.ellipse(16, -9, 13, 13, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.moveTo(22, -16);
+          ctx.lineTo(36, -30);
+          ctx.lineTo(28, -14);
+          ctx.fill();
+
+          ctx.fillStyle = '#1e1b4b';
+          ctx.beginPath();
+          ctx.arc(20, -10, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(21, -11, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#f472b6';
+          const wing = Math.sin(s.frameCount * 0.38) * 0.45;
+          ctx.save();
+          ctx.translate(-2, 0);
+          ctx.rotate(wing);
+          ctx.beginPath();
+          ctx.ellipse(-8, -4, 14, 8, -0.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillStyle = '#ec4899';
+          ctx.beginPath();
+          ctx.arc(-22, 2, 7, 0, Math.PI * 2);
+          ctx.arc(-24, 9, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          ctx.fillStyle = '#22c55e';
+          ctx.fillRect(0, canvas.height - 24, canvas.width, 24);
+          ctx.fillStyle = '#16a34a';
+          ctx.fillRect(0, canvas.height - 24, canvas.width, 6);
+
+          if (s.status === 'ready') {
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Fredoka, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('¡TOCA LA PANTALLA O PULSA ESPACIO!', canvas.width / 2, canvas.height / 2 + 50);
+          } else if (s.status === 'gameover') {
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 32px Fredoka, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('¡INTÉNTALO OTRA VEZ! 🦄', canvas.width / 2, canvas.height / 2 - 25);
+            ctx.font = 'bold 22px Fredoka, sans-serif';
+            ctx.fillStyle = '#fde047';
+            ctx.fillText(`Puntuación: ${s.currentScore}`, canvas.width / 2, canvas.height / 2 + 15);
+            ctx.font = '16px Quicksand, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('Toca la pantalla para reiniciar el vuelo', canvas.width / 2, canvas.height / 2 + 55);
+          }
+
+          animId = requestAnimationFrame(loop);
+        };
+
+        animId = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(animId);
+      }, [highScore, currentUser]);
+
+      return (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none touch-none">
+          <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between text-white pointer-events-auto">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-2xl font-bold text-sm flex items-center gap-1.5 shadow-lg"
+            >
+              <span>⬅️</span> Volver
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="bg-purple-900/80 backdrop-blur-md px-4 py-1.5 rounded-2xl border border-purple-400/40 text-center">
+                <span className="text-[10px] uppercase font-bold text-purple-200 block">Puntos</span>
+                <span className="text-2xl font-black text-white">{score}</span>
+              </div>
+              <div className="bg-amber-900/80 backdrop-blur-md px-4 py-1.5 rounded-2xl border border-amber-400/40 text-center">
+                <span className="text-[10px] uppercase font-bold text-amber-200 block">Récord</span>
+                <span className="text-2xl font-black text-amber-300">{highScore}</span>
+              </div>
+            </div>
+          </div>
+
+          <div onClick={jump} className="w-full h-full cursor-pointer relative flex items-center justify-center">
+            <canvas
+              ref={canvasRef}
+              width={window.innerWidth > 900 ? 900 : 480}
+              height={window.innerHeight > 650 ? 650 : 560}
+              className="w-full h-full object-cover block"
+            />
+          </div>
+
+          <div className="absolute bottom-6 left-0 right-0 flex justify-center pointer-events-auto px-4">
+            <button
+              onClick={jump}
+              className="w-full max-w-md py-4 rounded-3xl bg-gradient-to-r from-pink-500 via-purple-600 to-indigo-600 text-white font-extrabold text-xl shadow-2xl active:scale-95 transition"
+            >
+              ¡TOCA AQUÍ PARA SALTAR! 🪽
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // --- COMPONENTE PRINCIPAL ---
+    function App() {
+      const [users, setUsers] = React.useState([]);
+      const [activeTab, setActiveTab] = React.useState('chats');
+      const [posts, setPosts] = React.useState([]);
+      const [chats, setChats] = React.useState([]);
+      const [leaderboard, setLeaderboard] = React.useState([]);
+      const [parentPendingQueue, setParentPendingQueue] = React.useState([]);
+      const [isLoading, setIsLoading] = React.useState(true);
+      const [firebaseUser, setFirebaseUser] = React.useState(null);
+      const [currentUserProfile, setCurrentUserProfile] = React.useState(null);
+
+      // Estados de Login
+      const [rawUsernameInput, setRawUsernameInput] = React.useState('');
+      const [loginPasswordInput, setLoginPasswordInput] = React.useState('');
+      const [showLoginPassword, setShowLoginPassword] = React.useState(false);
+      const [loginError, setLoginError] = React.useState('');
+      const [isAuthenticating, setIsAuthenticating] = React.useState(false);
+
+      // Entradas de comentarios del museo
+      const [commentInputs, setCommentInputs] = React.useState({});
+
+      // Chat y notas de voz
+      const [selectedChatId, setSelectedChatId] = React.useState(null);
+      const [messageInput, setMessageInput] = React.useState('');
+      const [isRecordingAudio, setIsRecordingAudio] = React.useState(false);
+      const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+      const recordTimerRef = React.useRef(null);
+      const mediaRecorderRef = React.useRef(null);
+      const audioChunksRef = React.useRef([]);
+
+      // Notificaciones Toast globales
+      const [toastNotification, setToastNotification] = React.useState(null);
+      const toastTimerRef = React.useRef(null);
+
+      const triggerToast = (message, icon = '✨') => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToastNotification({ message, icon });
+        toastTimerRef.current = setTimeout(() => {
+          setToastNotification(null);
+        }, 4000);
+      };
+
+      // Modales
+      const [showPainter, setShowPainter] = React.useState(false);
+      const [showRequestChatModal, setShowRequestChatModal] = React.useState(false);
+      const [requestChatTarget, setRequestChatTarget] = React.useState('');
+      const [showAddMemberModal, setShowAddMemberModal] = React.useState(false);
+      const [modalError, setModalError] = React.useState('');
+      const [showFullscreenGame, setShowFullscreenGame] = React.useState(false);
+
+      // Formulario para crear nuevo miembro
+      const [newMemberForm, setNewMemberForm] = React.useState({
+        name: '',
+        rawUsername: '',
+        password: '',
+        role: 'parent',
+        userIcon: '🛡️',
+        theme: 'unicorns',
+        relation: ''
+      });
+
+      // --- ESCUCHADOR DE SESIÓN ACTIVA ---
+      React.useEffect(() => {
+        if (!auth) {
+          setIsLoading(false);
+          return;
+        }
+
+        const unsubAuth = auth.onAuthStateChanged(async (user) => {
+          setFirebaseUser(user);
+          if (user && db) {
+            try {
+              const docSnap = await db.collection('users').doc(user.uid).get();
+              if (docSnap.exists) {
+                setCurrentUserProfile({ ...docSnap.data(), id: user.uid });
+              } else {
+                const autoName = user.displayName || user.email?.split('@')[0] || 'Usuario';
+                const autoUsername = `@${user.email?.split('@')[0] || 'usuario'}`;
+                const recoveryProfile = {
+                  id: user.uid,
+                  name: autoName,
+                  username: autoUsername,
+                  email: user.email,
+                  userIcon: '🛡️',
+                  role: 'parent',
+                  avatar: '🛡️',
+                  theme: 'unicorns',
+                  createdAt: Date.now()
+                };
+                await db.collection('users').doc(user.uid).set(recoveryProfile);
+                setCurrentUserProfile(recoveryProfile);
+              }
+            } catch (err) {
+              console.warn("Aviso al obtener perfil del usuario:", err);
+            }
+          } else {
+            setCurrentUserProfile(null);
+          }
+          setIsLoading(false);
+        });
+
+        return () => unsubAuth();
+      }, []);
+
+      // --- SINCRONIZACIÓN EN TIEMPO REAL CON LA BASE DE DATOS ---
+      React.useEffect(() => {
+        if (!db) return;
+
+        let unsubUsers = () => {};
+        let unsubChats = () => {};
+        let unsubPosts = () => {};
+        let unsubLB = () => {};
+        let unsubPQ = () => {};
+
+        try {
+          unsubUsers = db.collection('users').onSnapshot(snap => {
+            const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            setUsers(list);
+            if (firebaseUser) {
+              const myDoc = list.find(u => u.id === firebaseUser.uid);
+              if (myDoc) setCurrentUserProfile(myDoc);
+            }
+          }, (err) => {
+            console.warn("Aviso al leer lista de usuarios:", err.message);
+          });
+
+          // Escuchar las demás colecciones si el usuario ya está autenticado
+          if (firebaseUser) {
+            unsubChats = db.collection('chats').onSnapshot(snap => {
+              const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+              setChats(list);
+            }, (err) => console.warn("Aviso al leer chats:", err.message));
+
+            unsubPosts = db.collection('posts').onSnapshot(snap => {
+              const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+              list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              setPosts(list);
+            }, (err) => console.warn("Aviso al leer posts:", err.message));
+
+            unsubLB = db.collection('leaderboard').onSnapshot(snap => {
+              const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+              setLeaderboard(list);
+            }, (err) => console.warn("Aviso al leer leaderboard:", err.message));
+
+            unsubPQ = db.collection('parentQueue').onSnapshot(snap => {
+              const list = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+              setParentPendingQueue(list);
+            }, (err) => console.warn("Aviso al leer parentQueue:", err.message));
+          }
+        } catch (e) {
+          console.warn("Error en suscripciones a datos:", e);
+        }
+
+        return () => {
+          unsubUsers();
+          unsubChats();
+          unsubPosts();
+          unsubLB();
+          unsubPQ();
+        };
+      }, [firebaseUser]);
+
+      // Temporizador de grabación de notas de voz
+      React.useEffect(() => {
+        if (isRecordingAudio) {
+          setRecordingSeconds(0);
+          recordTimerRef.current = setInterval(() => {
+            setRecordingSeconds(s => s + 1);
+          }, 1000);
+        } else {
+          if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        }
+        return () => {
+          if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        };
+      }, [isRecordingAudio]);
+
+      // Perfil activo garantizado
+      const currentUser = currentUserProfile || users.find(u => u.id === firebaseUser?.uid) || null;
+      const activeTheme = (currentUser && THEMES[currentUser.theme]) ? THEMES[currentUser.theme] : THEMES.unicorns;
+
+      // --- CERRAR SESIÓN ---
+      const handleLogout = async () => {
+        SoundFX.playPop();
+        try {
+          if (auth) await auth.signOut();
+        } catch (e) {}
+        setCurrentUserProfile(null);
+        setFirebaseUser(null);
+        setSelectedChatId(null);
+        setRawUsernameInput('');
+        setLoginPasswordInput('');
+        setLoginError('');
+        triggerToast('Sesión cerrada correctamente', '🔒');
+      };
+
+      // --- TRADUCTOR DE ERRORES AMIGABLE (SIN TECNICISMOS) ---
+      const getFriendlyErrorMessage = (err) => {
+        if (!err) return 'Ha ocurrido un error inesperado.';
+        if (err.code === 'auth/operation-not-allowed') {
+          return '⚠️ El acceso con usuario y contraseña está desactivado. Habilítalo en el panel.';
+        }
+        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+          return 'Contraseña o usuario incorrecto. Inténtalo de nuevo.';
+        }
+        if (err.code === 'auth/user-not-found') {
+          return 'Usuario no encontrado. Asegúrate de haber creado tu cuenta primero.';
+        }
+        if (err.code === 'auth/email-already-in-use') {
+          return 'Ese nombre de usuario ya está registrado. Por favor elige otro.';
+        }
+        if (err.code === 'auth/weak-password') {
+          return 'La contraseña debe tener un mínimo de 6 caracteres.';
+        }
+        if (err.code === 'auth/invalid-email') {
+          return 'Formato de usuario no válido. Usa únicamente letras, números y guiones bajos.';
+        }
+        if (err.code === 'permission-denied') {
+          return '⚠️ Permiso denegado al guardar los datos.';
+        }
+        return err.message || 'Error de conexión. Inténtalo de nuevo.';
+      };
+
+      // --- INICIAR SESIÓN ---
+      const handleLoginSubmit = async (e) => {
+        if (e) e.preventDefault();
+        setLoginError('');
+
+        const usernameToAuth = rawUsernameInput.trim();
+
+        if (!usernameToAuth) {
+          setLoginError('Por favor introduce tu nombre de usuario');
+          return;
+        }
+
+        if (!loginPasswordInput) {
+          setLoginError('Por favor introduce tu contraseña');
+          return;
+        }
+
+        if (loginPasswordInput.length < 6) {
+          setLoginError('La contraseña debe tener al menos 6 caracteres');
+          return;
+        }
+
+        setIsAuthenticating(true);
+        const internalEmail = usernameToFakeEmail(usernameToAuth);
+
+        try {
+          const cred = await auth.signInWithEmailAndPassword(internalEmail, loginPasswordInput.trim());
+          SoundFX.playSuccess();
+
+          if (db) {
+            const userDoc = await db.collection('users').doc(cred.user.uid).get();
+            if (userDoc.exists) {
+              setCurrentUserProfile({ ...userDoc.data(), id: cred.user.uid });
+            } else {
+              const cleanUsername = `@${usernameToAuth.replace(/@/g, '').toLowerCase()}`;
+              const fallback = {
+                id: cred.user.uid,
+                name: cleanUsername.replace('@', ''),
+                username: cleanUsername,
+                email: internalEmail,
+                userIcon: '🛡️',
+                role: 'parent',
+                avatar: '🛡️',
+                theme: 'unicorns',
+                createdAt: Date.now()
+              };
+              await db.collection('users').doc(cred.user.uid).set(fallback);
+              setCurrentUserProfile(fallback);
+            }
+          }
+
+          setLoginPasswordInput('');
+          setRawUsernameInput('');
+          setLoginError('');
+          triggerToast('¡Bienvenido a FriendsAndFamily!', '🎉');
+        } catch (err) {
+          console.error("Error al iniciar sesión:", err);
+          setLoginError(getFriendlyErrorMessage(err));
+          SoundFX.playPop();
+        } finally {
+          setIsAuthenticating(false);
+        }
+      };
+
+      // --- CREAR CUENTA NUEVA (INDEPENDIENTE Y SEGURA) ---
+      const handleCreateMember = async (e) => {
+        if (e) e.preventDefault();
+        setModalError('');
+
+        const cleanRaw = (newMemberForm.rawUsername || '').toLowerCase().replace(/@/g, '').replace(/[^a-z0-9_.-]/g, '').trim();
+
+        if (!newMemberForm.name.trim() || !cleanRaw) {
+          setModalError('Por favor completa el nombre y el usuario');
+          return;
+        }
+
+        if (newMemberForm.password.trim().length < 6) {
+          setModalError('La contraseña debe tener al menos 6 caracteres');
+          return;
+        }
+
+        const fullUsername = `@${cleanRaw}`;
+        const internalEmail = usernameToFakeEmail(cleanRaw);
+        setIsAuthenticating(true);
+
+        try {
+          // Si el padre ya tiene una sesión iniciada, creamos el miembro mediante instancia secundaria
+          // para no cerrar ni alterar la sesión actual del padre
+          if (currentUser) {
+            const secAuth = getSecondaryAuthInstance();
+            const userCredential = await secAuth.createUserWithEmailAndPassword(internalEmail, newMemberForm.password.trim());
+            const newUid = userCredential.user.uid;
+
+            const newUserData = {
+              id: newUid,
+              name: newMemberForm.name.trim(),
+              username: fullUsername,
+              email: internalEmail,
+              userIcon: newMemberForm.userIcon || '🚀',
+              role: newMemberForm.role,
+              avatar: newMemberForm.userIcon || '🚀',
+              theme: newMemberForm.theme || 'unicorns',
+              createdAt: Date.now()
+            };
+
+            if (newMemberForm.role === 'minor') {
+              newUserData.parentIds = currentUser.role === 'parent' ? [currentUser.id] : [];
+            } else if (newMemberForm.role === 'parent') {
+              newUserData.childrenIds = [];
+            } else if (newMemberForm.role === 'relative') {
+              newUserData.relation = newMemberForm.relation.trim() || 'Familiar';
+            }
+
+            await db.collection('users').doc(newUid).set(newUserData);
+
+            if (newMemberForm.role === 'minor' && currentUser.role === 'parent') {
+              const updatedChildren = [...(currentUser.childrenIds || []), newUid];
+              await db.collection('users').doc(currentUser.id).update({
+                childrenIds: updatedChildren
+              });
+              setCurrentUserProfile(prev => prev ? { ...prev, childrenIds: updatedChildren } : prev);
+            }
+
+            await secAuth.signOut();
+            SoundFX.playSuccess();
+            triggerToast(`¡Cuenta de ${newUserData.name} (${newUserData.username}) creada con éxito!`, '🎉');
+          } else {
+            // Si nos encontramos en la pantalla de bienvenida/login, registramos y entramos directamente
+            const userCredential = await auth.createUserWithEmailAndPassword(internalEmail, newMemberForm.password.trim());
+            const newUid = userCredential.user.uid;
+
+            const newUserData = {
+              id: newUid,
+              name: newMemberForm.name.trim(),
+              username: fullUsername,
+              email: internalEmail,
+              userIcon: newMemberForm.userIcon || '🛡️',
+              role: newMemberForm.role,
+              avatar: newMemberForm.userIcon || '🛡️',
+              theme: newMemberForm.theme || 'unicorns',
+              createdAt: Date.now()
+            };
+
+            if (newMemberForm.role === 'parent') {
+              newUserData.childrenIds = [];
+            }
+
+            await db.collection('users').doc(newUid).set(newUserData);
+            setCurrentUserProfile(newUserData);
+            SoundFX.playSuccess();
+            triggerToast(`¡Bienvenido/a, ${newUserData.name}!`, '🎉');
+          }
+
+          setShowAddMemberModal(false);
+          setModalError('');
+          setNewMemberForm({
+            name: '',
+            rawUsername: '',
+            password: '',
+            role: currentUser ? 'minor' : 'parent',
+            userIcon: currentUser ? '🚀' : '🛡️',
+            theme: 'unicorns',
+            relation: ''
+          });
+        } catch (err) {
+          console.error("Error al registrar cuenta:", err);
+          setModalError(getFriendlyErrorMessage(err));
+          SoundFX.playPop();
+        } finally {
+          setIsAuthenticating(false);
+        }
+      };
+
+      // --- CAMBIO DE TEMA VISUAL ---
+      const handleThemeChange = async (newThemeKey) => {
+        if (!currentUser || !db) return;
+        SoundFX.playPop();
+        try {
+          await db.collection('users').doc(currentUser.id).update({ theme: newThemeKey });
+          setCurrentUserProfile(prev => prev ? { ...prev, theme: newThemeKey } : prev);
+        } catch (e) {
+          console.error("Error al actualizar tema:", e);
+        }
+      };
+
+      // --- GUARDAR PUNTUACIÓN DE FLAPPY UNICORN ---
+      const handleUpdateScore = async (score) => {
+        if (!currentUser || !db) return;
+        const existing = leaderboard.find(item => item.userId === currentUser.id);
+        if (!existing || score > existing.score) {
+          try {
+            await db.collection('leaderboard').doc(currentUser.id).set({
+              userId: currentUser.id,
+              score,
+              updatedAt: Date.now()
+            }, { merge: true });
+          } catch (e) {
+            console.error("Error al guardar puntuación:", e);
+          }
+        }
+      };
+
+      // --- GUARDAR DIBUJO DEL MUSEO ---
+      const handleSaveDrawing = async ({ title, description, imageUrl }) => {
+        if (!currentUser || !db) return;
+        const newPostId = `p_${Date.now()}`;
+        const newPost = {
+          id: newPostId,
+          authorId: currentUser.id,
+          title,
+          description,
+          status: 'pending',
+          timestamp: 'Justo ahora',
+          createdAt: Date.now(),
+          likes: [],
+          stickers: ['🎨'],
+          imageUrl,
+          comments: []
+        };
+
+        const newQueueId = `req_post_${Date.now()}`;
+        const newQueueItem = {
+          id: newQueueId,
+          type: 'post_approval',
+          childId: currentUser.id,
+          postId: newPostId,
+          title: newPost.title,
+          timestamp: 'Justo ahora'
+        };
+
+        try {
+          await db.collection('posts').doc(newPostId).set(newPost);
+          await db.collection('parentQueue').doc(newQueueId).set(newQueueItem);
+          setShowPainter(false);
+          SoundFX.playSuccess();
+          triggerToast('¡Obra enviada a supervisión!', '🎨');
+        } catch (e) {
+          console.error("Error al guardar obra:", e);
+          triggerToast('Error al enviar la obra', '⚠️');
+        }
+      };
+
+      // --- REACCIONES EN EL MUSEO ---
+      const handleAddSticker = async (postId, sticker) => {
+        if (!currentUser || !db) return;
+        SoundFX.playPop();
+        const targetPost = posts.find(p => p.id === postId);
+        if (!targetPost) return;
+
+        const hasLiked = (targetPost.likes || []).includes(currentUser.id);
+        const newLikes = hasLiked
+          ? targetPost.likes.filter(id => id !== currentUser.id)
+          : [...(targetPost.likes || []), currentUser.id];
+        const newStickers = (targetPost.stickers || []).includes(sticker)
+          ? targetPost.stickers
+          : [...(targetPost.stickers || []), sticker];
+
+        try {
+          await db.collection('posts').doc(postId).update({
+            likes: newLikes,
+            stickers: newStickers
+          });
+        } catch (e) {
+          console.error("Error al añadir reacción:", e);
+        }
+      };
+
+      // --- COMENTARIOS EN EL MUSEO ---
+      const handleAddComment = async (postId, text) => {
+        if (!currentUser || !db || !text || !text.trim()) return;
+        SoundFX.playPop();
+        const targetPost = posts.find(p => p.id === postId);
+        if (!targetPost) return;
+
+        const newComment = {
+          id: `c_${Date.now()}`,
+          authorId: currentUser.id,
+          text: text.trim(),
+          time: 'Ahora'
+        };
+        const updatedComments = [...(targetPost.comments || []), newComment];
+
+        try {
+          await db.collection('posts').doc(postId).update({
+            comments: updatedComments
+          });
+          setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+        } catch (e) {
+          console.error("Error al comentar:", e);
+        }
+      };
+
+      // --- ENVIAR MENSAJE DE TEXTO O AUDIO ---
+      const handleSendMessage = async (text = null, isAudio = false, audioBase64 = null) => {
+        if (!selectedChatId || !currentUser || !db) return;
+        const msgText = text !== null ? text : messageInput;
+        if (!isAudio && !msgText.trim()) return;
+
+        SoundFX.playPop();
+        const targetChat = chats.find(c => c.id === selectedChatId);
+        if (!targetChat) return;
+
+        const newMessage = {
+          id: `m_${Date.now()}`,
+          senderId: currentUser.id,
+          text: isAudio ? '' : msgText,
+          isAudio,
+          audioData: audioBase64 || null,
+          duration: isAudio ? Math.max(2, recordingSeconds) : null,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        const updatedMessages = [...(targetChat.messages || []), newMessage];
+        const unreadBy = { ...(targetChat.unreadBy || {}) };
+        (targetChat.participants || []).forEach(pid => {
+          if (pid !== currentUser.id) {
+            unreadBy[pid] = (unreadBy[pid] || 0) + 1;
+          }
+        });
+
+        try {
+          await db.collection('chats').doc(selectedChatId).update({
+            messages: updatedMessages,
+            unreadBy
+          });
+          if (!isAudio) setMessageInput('');
+        } catch (e) {
+          console.error("Error al enviar mensaje:", e);
+        }
+      };
+
+      const handleSendSticker = (emoji) => handleSendMessage(emoji, false);
+
+      // --- GRABACIÓN DE AUDIO REAL CON MICRÓFONO ---
+      const startRealAudioRecording = async () => {
+        try {
+          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+              if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            mediaRecorder.onstop = () => {
+              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+              const reader = new FileReader();
+              reader.readAsDataURL(audioBlob);
+              reader.onloadend = () => {
+                handleSendMessage('', true, reader.result);
+              };
+              stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecordingAudio(true);
+            SoundFX.playPop();
+          } else {
+            setIsRecordingAudio(true);
+          }
+        } catch (err) {
+          setIsRecordingAudio(true);
+        }
+      };
+
+      const stopRealAudioRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        } else {
+          handleSendMessage('', true, null);
+        }
+        setIsRecordingAudio(false);
+        SoundFX.playSuccess();
+      };
+
+      // --- SOLICITAR APERTURA DE NUEVO CHAT ---
+      const handleRequestNewChat = async (targetId) => {
+        if (!targetId || !currentUser || !db) return;
+        const targetUser = users.find(u => u.id === targetId);
+
+        // Si ya existe una conversación con esta persona (aprobada o pendiente), redirigir directamente
+        const existing = chats.find(c =>
+          (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(targetId)
+        );
+        if (existing) {
+          triggerToast(`Ya tienes una conversación con ${targetUser?.name || 'este contacto'}`, '💬');
+          setShowRequestChatModal(false);
+          setSelectedChatId(existing.id);
+          setActiveTab('chats');
+          return;
+        }
+
+        const newChatId = `c_${currentUser.id}_${targetId}_${Date.now()}`;
+        const newReqId = `req_chat_${newChatId}`;
+
+        // Crear el chat en estado pendiente para que aparezca de inmediato como 'Solicitada'
+        const newChat = {
+          id: newChatId,
+          participants: [currentUser.id, targetId],
+          title: targetUser?.name || 'Contacto',
+          approvedByParent: false,
+          status: 'pending',
+          requestedBy: currentUser.id,
+          targetUserId: targetId,
+          createdAt: Date.now(),
+          unreadBy: {},
+          messages: [
+            {
+              id: `m_pending_${Date.now()}`,
+              senderId: 'system',
+              text: '⏳ Solicitud de chat enviada. Esperando la aprobación de los padres para comenzar a conversar.',
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isAudio: false
+            }
+          ]
+        };
+
+        const newReq = {
+          id: newReqId,
+          type: 'new_chat_permission',
+          chatId: newChatId,
+          childId: currentUser.id,
+          targetUserId: targetId,
+          reason: `${currentUser.name} solicita abrir chat con ${targetUser?.name || 'contacto'}.`,
+          timestamp: 'Ahora'
+        };
+
+        try {
+          await db.collection('chats').doc(newChatId).set(newChat);
+          await db.collection('parentQueue').doc(newReqId).set(newReq);
+          SoundFX.playSuccess();
+          triggerToast(`Solicitud enviada para abrir chat con ${targetUser?.name}. Ya aparece en tus chats.`, '⏳');
+          setShowRequestChatModal(false);
+          setSelectedChatId(newChatId);
+          setActiveTab('chats');
+        } catch (e) {
+          console.error("Error al solicitar chat:", e);
+        }
+      };
+
+      // --- APROBACIÓN PARENTAL ---
+      const handleApproveParentRequest = async (request) => {
+        if (!db) return;
+        SoundFX.playSuccess();
+        if (request.type === 'new_chat_permission') {
+          const chatId = request.chatId;
+          try {
+            if (chatId) {
+              const chatDoc = await db.collection('chats').doc(chatId).get();
+              const existingMessages = (chatDoc.exists && chatDoc.data().messages) ? chatDoc.data().messages : [];
+              const approvedMsg = {
+                id: `m_init_${Date.now()}`,
+                senderId: currentUser.id,
+                text: '🛡️ Conversación autorizada por los padres. ¡A comunicarse con respeto y cariño!',
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                isAudio: false
+              };
+              await db.collection('chats').doc(chatId).update({
+                approvedByParent: true,
+                status: 'approved',
+                messages: [...existingMessages, approvedMsg]
+              });
+            } else {
+              // Respaldo para solicitudes anteriores
+              const target = users.find(u => u.id === request.targetUserId);
+              const newChatId = `c_${request.childId}_${request.targetUserId}_${Date.now()}`;
+              const newChat = {
+                id: newChatId,
+                participants: [request.childId, request.targetUserId],
+                title: `${target?.name || 'Contacto'}`,
+                approvedByParent: true,
+                status: 'approved',
+                unreadBy: {},
+                messages: [
+                  {
+                    id: `m_init_${Date.now()}`,
+                    senderId: currentUser.id,
+                    text: '🛡️ Conversación autorizada. ¡A comunicarse con respeto y cariño!',
+                    time: 'Ahora',
+                    isAudio: false
+                  }
+                ]
+              };
+              await db.collection('chats').doc(newChatId).set(newChat);
+            }
+            await db.collection('parentQueue').doc(request.id).delete();
+          } catch (e) {
+            console.error("Error al aprobar chat:", e);
+          }
+        } else if (request.type === 'post_approval') {
+          try {
+            await db.collection('posts').doc(request.postId).update({ status: 'approved' });
+            await db.collection('parentQueue').doc(request.id).delete();
+          } catch (e) {}
+        }
+        triggerToast('Solicitud aprobada con éxito', '✅');
+      };
+
+      const handleRejectParentRequest = async (requestId, postId = null, chatId = null) => {
+        if (!db) return;
+        SoundFX.playPop();
+        try {
+          if (postId) await db.collection('posts').doc(postId).delete();
+          if (chatId) await db.collection('chats').doc(chatId).delete();
+          await db.collection('parentQueue').doc(requestId).delete();
+        } catch (e) {}
+        triggerToast('Solicitud descartada', '🗑️');
+      };
+
+      const handleOpenChat = async (chatId) => {
+        SoundFX.playPop();
+        setSelectedChatId(chatId);
+        if (!currentUser || !db) return;
+
+        try {
+          await db.collection('chats').doc(chatId).update({
+            [`unreadBy.${currentUser.id}`]: 0
+          });
+        } catch (e) {}
+      };
+
+      // --- REGLAS DE PRIVACIDAD ---
+      const visibleChats = chats.filter(chat => {
+        if (!currentUser) return false;
+        if (currentUser.role === 'parent') {
+          const myChildrenIds = currentUser.childrenIds || [];
+          const isOwnChat = (chat.participants || []).includes(currentUser.id);
+          const isChildChat = (chat.participants || []).some(pId => myChildrenIds.includes(pId));
+          return isOwnChat || isChildChat;
+        }
+        return (chat.participants || []).includes(currentUser.id);
+      });
+
+      const visiblePosts = posts.filter(post => {
+        if (!currentUser) return false;
+        if (currentUser.role === 'parent') return true;
+        if (post.status === 'approved') return true;
+        return post.authorId === currentUser.id;
+      });
+
+      const getUnreadCount = (chat) => {
+        return (currentUser && chat.unreadBy && chat.unreadBy[currentUser.id]) || 0;
+      };
+
+      const totalUnreadChatsCount = visibleChats.reduce((sum, c) => sum + (getUnreadCount(c) > 0 ? 1 : 0), 0);
+      const activeChatObj = chats.find(c => c.id === selectedChatId);
+
+      const getChatSupervisionDetails = (chat) => {
+        if (!currentUser || currentUser.role !== 'parent') return null;
+        const isOwn = (chat.participants || []).includes(currentUser.id);
+        const myChildrenIds = currentUser.childrenIds || [];
+        const childParticipant = (chat.participants || []).find(pId => myChildrenIds.includes(pId));
+
+        if (isOwn && !childParticipant) {
+          return { type: 'own', label: 'Conversación Propia', badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+        }
+        if (childParticipant) {
+          const childObj = users.find(u => u.id === childParticipant);
+          return {
+            type: 'child',
+            child: childObj,
+            label: `Supervisión: De ${childObj?.name || 'hijo/a'} ${childObj?.userIcon || ''}`,
+            badgeBg: 'bg-purple-100 text-purple-800 border-purple-300 font-bold'
+          };
+        }
+        return { type: 'supervised', label: 'Supervisión General', badgeBg: 'bg-slate-100 text-slate-700 border-slate-300' };
+      };
+
+      // --- PANTALLA DE CARGA ---
+      if (isLoading) {
+        return (
+          <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-4">
+            <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <h2 className="text-lg font-bold">Cargando FriendsAndFamily...</h2>
+          </div>
+        );
+      }
+
+      // --- GLOBO TOAST GLOBAL ---
+      const ToastElement = toastNotification ? (
+        <div className="fixed top-5 right-4 left-4 sm:left-auto z-[9999] max-w-sm bg-slate-900/95 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-purple-500/40 animate-bounce">
+          <span className="text-2xl">{toastNotification.icon}</span>
+          <p className="text-xs font-semibold leading-snug">{toastNotification.message}</p>
+          <button
+            onClick={() => setToastNotification(null)}
+            className="ml-auto text-slate-400 hover:text-white text-sm"
+          >✕</button>
+        </div>
+      ) : null;
+
+      // --- MODAL DE CREAR MIEMBRO / CUENTA (COMPARTIDO) ---
+      const AddMemberModalElement = showAddMemberModal ? (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 text-left">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-purple-300 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <span>➕</span> {currentUser ? 'Crear Nuevo Miembro' : 'Crear Cuenta'}
+              </h3>
+              <button onClick={() => setShowAddMemberModal(false)} className="text-slate-400 text-xl font-bold">✕</button>
+            </div>
+
+            {modalError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <p className="text-red-600 text-xs font-bold leading-snug">{modalError}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateMember} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Tipo de Cuenta:</label>
+                <select
+                  value={newMemberForm.role}
+                  onChange={(e) => {
+                    const r = e.target.value;
+                    const defaultIcon = r === 'parent' ? '🛡️' : (r === 'minor' ? '🚀' : '🌸');
+                    setNewMemberForm({ ...newMemberForm, role: r, userIcon: defaultIcon });
+                  }}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-semibold bg-white"
+                >
+                  <option value="parent">Padre / Madre / Tutor</option>
+                  <option value="minor">Hijo/a (Menor a cargo)</option>
+                  <option value="relative">Familiar (Tío/a, Abuelo/a)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nombre completo:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Daniel"
+                  value={newMemberForm.name}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, name: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border border-slate-300 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nombre de usuario:</label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3.5 font-black text-purple-600 text-sm select-none pointer-events-none">@</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="usuario"
+                    value={newMemberForm.rawUsername}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/@/g, '').toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+                      setNewMemberForm({ ...newMemberForm, rawUsername: clean });
+                    }}
+                    className="w-full pl-8 pr-3 p-2.5 rounded-xl border border-slate-300 font-semibold font-mono text-xs"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">El arroba se añadirá automáticamente (@{newMemberForm.rawUsername || 'usuario'})</span>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Contraseña (mínimo 6 caracteres):</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Mínimo 6 caracteres"
+                  value={newMemberForm.password}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, password: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border-2 border-purple-200 bg-purple-50/50 font-bold"
+                />
+              </div>
+
+              {newMemberForm.role === 'relative' && (
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Parentesco:</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Tío/a, Abuelo/a"
+                    value={newMemberForm.relation}
+                    onChange={(e) => setNewMemberForm({ ...newMemberForm, relation: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-300 font-semibold"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Icono de perfil:</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['🛡️', '🚀', '🦄', '⚽', '🎨', '🌟', '🐾', '🐱', '💖'].map(ic => (
+                    <button
+                      type="button"
+                      key={ic}
+                      onClick={() => setNewMemberForm({ ...newMemberForm, userIcon: ic })}
+                      className={`w-9 h-9 rounded-xl text-lg flex items-center justify-center border transition ${newMemberForm.userIcon === ic ? 'border-purple-600 bg-purple-100 scale-110 ring-2 ring-purple-300' : 'bg-slate-50 hover:bg-slate-100'}`}
+                    >
+                      {ic}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMemberModal(false)}
+                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold"
+                >Cancelar</button>
+                <button
+                  type="submit"
+                  disabled={isAuthenticating}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md transition"
+                >
+                  {isAuthenticating ? 'Creando...' : (currentUser ? 'Crear Miembro' : 'Guardar y Entrar')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null;
+
+      // --- PANTALLA DE ACCESO (CUANDO NO HAY SESIÓN ACTIVA) ---
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center p-4 select-none relative">
+            {ToastElement}
+            {AddMemberModalElement}
+
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border-4 border-purple-200 text-center relative">
+              <div className="flex justify-center mb-3">
+                <LayeredBrandIcon />
+              </div>
+              <h1 className="text-2xl font-black text-slate-800">
+                Friends<span className="text-pink-500">And</span>Family
+              </h1>
+
+              {/* Si existía una sesión anterior pendiente */}
+              {firebaseUser && !currentUser && (
+                <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-2xl text-xs text-purple-900 text-center">
+                  <p className="font-bold mb-1">Sesión detectada en el dispositivo</p>
+                  <button
+                    onClick={handleLogout}
+                    className="px-3 py-1 bg-red-100 text-red-600 rounded-lg font-bold hover:bg-red-200 transition"
+                  >
+                    Cerrar sesión actual
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={handleLoginSubmit} className="mt-5 space-y-4 text-left">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Nombre de usuario:
+                  </label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3.5 font-black text-purple-600 text-sm select-none pointer-events-none">@</span>
+                    <input
+                      type="text"
+                      value={rawUsernameInput}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/@/g, '').toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+                        setRawUsernameInput(clean);
+                        if (loginError) setLoginError('');
+                      }}
+                      placeholder="tu_usuario"
+                      className="w-full pl-8 pr-4 py-3 rounded-2xl border-2 border-purple-200 focus:outline-none focus:border-purple-500 text-sm font-bold bg-slate-50 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Contraseña:
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? "text" : "password"}
+                      value={loginPasswordInput}
+                      onChange={(e) => {
+                        setLoginPasswordInput(e.target.value);
+                        if (loginError) setLoginError('');
+                      }}
+                      placeholder="Mínimo 6 caracteres..."
+                      className="w-full px-4 py-3 rounded-2xl border-2 border-purple-200 focus:outline-none focus:border-purple-500 text-sm font-bold bg-slate-50 pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-lg"
+                      title={showLoginPassword ? "Ocultar" : "Mostrar"}
+                    >
+                      {showLoginPassword ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                  {loginError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl mt-2">
+                      <p className="text-red-600 text-xs font-bold flex items-start gap-1.5 leading-snug">
+                        <span>⚠️</span>
+                        <span>{loginError}</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isAuthenticating}
+                  className={`w-full py-3.5 rounded-2xl font-black text-sm text-white shadow-xl transition flex items-center justify-center gap-2 ${
+                    isAuthenticating
+                      ? 'bg-purple-400 cursor-wait'
+                      : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 active:scale-95'
+                  }`}
+                >
+                  <span>{isAuthenticating ? '⌛ Entrando...' : '🔓 Iniciar Sesión'}</span>
+                </button>
+
+                <div className="pt-2 border-t border-slate-100 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewMemberForm({
+                        name: '',
+                        rawUsername: '',
+                        password: '',
+                        role: 'parent',
+                        userIcon: '🛡️',
+                        theme: 'unicorns',
+                        relation: ''
+                      });
+                      setModalError('');
+                      setShowAddMemberModal(true);
+                    }}
+                    className="text-xs font-bold text-purple-700 hover:text-purple-900 transition flex items-center justify-center gap-1 mx-auto"
+                  >
+                    <span>➕</span> Crear nueva cuenta
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // --- APP PRINCIPAL (CON SESIÓN INICIADA) ---
+      return (
+        <div className={`min-h-screen bg-gradient-to-br ${activeTheme.bgGradient} flex flex-col transition-colors duration-500 relative overflow-hidden`}>
+          {ToastElement}
+          {AddMemberModalElement}
+
+          {/* Iconos flotantes del tema de fondo */}
+          <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+            {activeTheme.floatingIcons.map((ic, idx) => {
+              const leftPos = (idx * 13) % 95;
+              const topPos = (idx * 21) % 90;
+              const animDelay = (idx * 0.8) % 4;
+              const size = (idx % 2 === 0) ? 'text-4xl' : 'text-6xl';
+              return (
+                <span
+                  key={idx}
+                  className={`floating-bg-item ${size}`}
+                  style={{
+                    left: `${leftPos}%`,
+                    top: `${topPos}%`,
+                    animationDelay: `${animDelay}s`
+                  }}
+                >
+                  {ic}
+                </span>
+              );
+            })}
+          </div>
+
+          {/* Barra Superior */}
+          <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-purple-200/80 shadow-sm px-4 py-3 relative">
+            <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
+
+              {/* Logo */}
+              <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('museum')}>
+                <LayeredBrandIcon />
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-black tracking-tight text-slate-800 flex items-center gap-1">
+                    Friends<span className="text-pink-500">And</span>Family
+                  </h1>
+                </div>
+              </div>
+
+              {/* Usuario activo y Cerrar Sesión */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-2xl border border-purple-200">
+                  <span className="text-xl">{currentUser.userIcon || currentUser.avatar}</span>
+                  <div className="text-left hidden sm:block">
+                    <span className="text-xs font-bold text-slate-800 block leading-tight">{currentUser.name}</span>
+                    <span className="text-[10px] text-purple-600 font-semibold block leading-tight">{currentUser.username}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                  title="Cerrar sesión"
+                >
+                  <span>🔒</span>
+                  <span className="hidden sm:inline">Cerrar Sesión</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Subcabecera de relaciones familiares */}
+            <div className="max-w-6xl mx-auto mt-2 pt-1 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+              <div className="flex items-center gap-2">
+                <span>
+                  Sesión: <strong>{currentUser.name}</strong> <span className="text-purple-600 font-semibold">{currentUser.username}</span>
+                </span>
+                <span className="text-slate-300">|</span>
+
+                {currentUser.role === 'minor' && (
+                  <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md border border-purple-200">
+                    👨‍👩‍👦 <strong>Tutores:</strong> {
+                      (currentUser.parentIds || [])
+                        .map(pid => users.find(u => u.id === pid)?.name)
+                        .filter(Boolean)
+                        .join(', ') || 'Sin tutor asignado'
+                    }
+                  </span>
+                )}
+
+                {currentUser.role === 'parent' && (
+                  <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200">
+                    👶 <strong>Hijos a cargo:</strong> {
+                      (currentUser.childrenIds || [])
+                        .map(cid => {
+                          const c = users.find(u => u.id === cid);
+                          return `${c?.name || ''} ${c?.userIcon || ''}`;
+                        })
+                        .filter(Boolean)
+                        .join(', ') || 'Ninguno'
+                    }
+                  </span>
+                )}
+
+                {currentUser.role === 'relative' && (
+                  <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md border border-rose-200">
+                    🌸 <strong>Familiar:</strong> {currentUser.relation || 'Pariente'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Diseño principal */}
+          <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col md:flex-row p-3 md:p-6 gap-6 relative z-10">
+
+            {/* Menú lateral de escritorio */}
+            <aside className="hidden md:flex flex-col w-64 bg-white/85 backdrop-blur-md rounded-3xl p-4 shadow-xl border border-white/60 h-fit sticky top-28 gap-2">
+              <div className="p-3 bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl mb-2 flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-white shadow flex items-center justify-center text-3xl">
+                  {currentUser.userIcon || currentUser.avatar}
+                </div>
+                <div className="overflow-hidden">
+                  <h2 className="font-bold text-slate-800 text-sm truncate">{currentUser.name}</h2>
+                  {currentUser.username && (
+                    <span className="text-xs font-semibold text-purple-700 block truncate">{currentUser.username}</span>
+                  )}
+                </div>
+              </div>
+
+              <nav className="space-y-1">
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'chats' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">💬</span>
+                    <span>Mis Chats</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {totalUnreadChatsCount > 0 && (
+                      <span className="bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                        {totalUnreadChatsCount}
+                      </span>
+                    )}
+                    {visibleChats.length > 0 && (
+                      <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{visibleChats.length}</span>
+                    )}
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('museum'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'museum' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🖼️</span>
+                    <span>El Museo</span>
+                  </div>
+                  <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{visiblePosts.length}</span>
+                </button>
+
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('game'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'game' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🦄</span>
+                    <span>Flappy Unicorn</span>
+                  </div>
+                  <span className="text-xs bg-purple-100 text-purple-700 font-bold px-2 py-0.5 rounded-full">Jugar</span>
+                </button>
+
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('friends'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'friends' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">👥</span>
+                    <span>Familia y Amigos</span>
+                  </div>
+                  <span className="bg-slate-200/80 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">{users.length}</span>
+                </button>
+
+                {currentUser.role === 'parent' && (
+                  <button
+                    onClick={() => { SoundFX.playPop(); setActiveTab('parent_tray'); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'parent_tray' ? 'bg-red-500 text-white shadow-md' : 'hover:bg-red-50 text-red-700'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">🛡️</span>
+                      <span>Supervisión</span>
+                    </div>
+                    {parentPendingQueue.length > 0 && (
+                      <span className="bg-white text-red-600 text-xs font-black px-2 py-0.5 rounded-full shadow-sm">
+                        {parentPendingQueue.length}
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  onClick={() => { SoundFX.playPop(); setActiveTab('settings'); }}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition ${activeTab === 'settings' ? `${activeTheme.primary} shadow-md` : 'hover:bg-slate-100 text-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🎨</span>
+                    <span>Fondo Temático</span>
+                  </div>
+                  <span className="text-sm">{activeTheme.icon}</span>
+                </button>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl font-bold text-xs text-red-600 hover:bg-red-50 transition"
+                  >
+                    <span>🔒</span>
+                    <span>Cerrar Sesión</span>
+                  </button>
+                </div>
+              </nav>
+            </aside>
+
+            {/* Vistas Principales */}
+            <main className="flex-1 min-w-0">
+              {/* VISTA DE CHATS */}
+              {activeTab === 'chats' && (
+                <div className="bg-white/90 backdrop-blur-md rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[630px]">
+                  {/* Lista de Chats */}
+                  <div className="w-full md:w-84 border-r border-slate-200 flex flex-col bg-slate-50/70">
+                    <div className="p-3.5 border-b border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-base text-slate-800">Tus Conversaciones</h3>
+                          {totalUnreadChatsCount > 0 && (
+                            <span className="bg-pink-100 text-pink-700 text-[11px] font-black px-2 py-0.5 rounded-full border border-pink-200">
+                              {totalUnreadChatsCount} nueva{totalUnreadChatsCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        {currentUser.role === 'minor' && (
+                          <button
+                            onClick={() => { SoundFX.playPop(); setShowRequestChatModal(true); }}
+                            className="p-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-xl text-xs font-bold flex items-center gap-1 shadow-sm"
+                            title="Solicitar apertura de nuevo chat"
+                          >
+                            <span>➕</span> Nuevo
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scroll p-2 space-y-2">
+                      {visibleChats.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-slate-400">
+                          <span className="text-3xl block mb-2">📬</span>
+                          No hay conversaciones todavía.
+                        </div>
+                      ) : (
+                        visibleChats.map(chat => {
+                          const isSelected = selectedChatId === chat.id;
+                          const otherParticipantId = (chat.participants || []).find(id => id !== currentUser.id) || (chat.participants || [])[0];
+                          const otherUser = users.find(u => u.id === otherParticipantId) || { name: chat.title || 'Contacto', avatar: '👤', userIcon: '👤' };
+                          const lastMsg = chat.messages && chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null;
+                          const unreadCount = getUnreadCount(chat);
+                          const isUnread = unreadCount > 0;
+                          const isPendingChat = chat.approvedByParent === false || chat.status === 'pending';
+                          const ownership = getChatSupervisionDetails(chat);
+
+                          return (
+                            <button
+                              key={chat.id}
+                              onClick={() => handleOpenChat(chat.id)}
+                              className={`w-full text-left p-3 rounded-2xl transition flex flex-col gap-2 relative overflow-hidden ${
+                                isSelected
+                                  ? 'bg-purple-100/90 border-2 border-purple-500 shadow-md ring-2 ring-purple-200'
+                                  : isPendingChat
+                                  ? 'bg-amber-50/80 border-2 border-amber-300 shadow-sm hover:border-amber-400'
+                                  : isUnread
+                                  ? 'bg-gradient-to-r from-pink-50 via-purple-50/70 to-white border-2 border-pink-400 shadow-md hover:shadow-lg hover:border-pink-500'
+                                  : 'hover:bg-slate-100 bg-white border border-slate-200'
+                              }`}
+                            >
+                              {isUnread && (
+                                <span className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-pink-500 via-rose-500 to-purple-600"></span>
+                              )}
+
+                              <div className="w-full flex items-center justify-between pl-1">
+                                {isPendingChat ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-md border bg-amber-100 text-amber-800 border-amber-300 font-bold flex items-center gap-1">
+                                    <span>⏳</span>
+                                    <span>Solicitada (Pendiente de aprobación)</span>
+                                  </span>
+                                ) : (
+                                  ownership && (
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-md border flex items-center gap-1 ${ownership.badgeBg}`}>
+                                      {ownership.type === 'own' ? '💬' : '🛡️'}
+                                      <span>{ownership.label}</span>
+                                    </span>
+                                  )
+                                )}
+                                <span className={`text-[10px] ${isUnread ? 'text-pink-600 font-extrabold' : 'text-slate-400'}`}>
+                                  {lastMsg?.time || ''}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-3 w-full pl-1">
+                                <div className="relative flex-shrink-0">
+                                  <div className={`w-11 h-11 rounded-2xl shadow-sm flex items-center justify-center text-2xl transition ${
+                                    isPendingChat
+                                      ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300'
+                                      : isUnread
+                                      ? 'bg-gradient-to-tr from-pink-200 to-purple-200 ring-2 ring-pink-400 scale-105'
+                                      : 'bg-purple-50'
+                                  }`}>
+                                    {otherUser.userIcon || otherUser.avatar}
+                                  </div>
+                                  {isPendingChat ? (
+                                    <span className="absolute -top-1 -right-1 flex h-4 w-4 rounded-full bg-amber-500 text-[9px] font-black text-white items-center justify-center border-2 border-white shadow">
+                                      ⏳
+                                    </span>
+                                  ) : isUnread ? (
+                                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-4 w-4 bg-pink-500 border-2 border-white items-center justify-center text-[9px] font-black text-white">
+                                        !
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border border-white rounded-full"></span>
+                                  )}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <h4 className={`text-sm truncate ${isUnread ? 'font-black text-slate-900' : 'font-bold text-slate-800'}`}>
+                                      {chat.title}
+                                    </h4>
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                                    <p className={`text-xs truncate flex-1 ${isPendingChat ? 'text-amber-700 font-medium' : isUnread ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
+                                      {isPendingChat ? '⏳ Esperando aprobación de los padres...' : (lastMsg ? (lastMsg.isAudio ? '🎤 Nota de voz' : lastMsg.text) : 'Conversación abierta')}
+                                    </p>
+
+                                    {isUnread && (
+                                      <span className="flex-shrink-0 bg-gradient-to-r from-pink-500 to-purple-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-sm">
+                                        {unreadCount} {unreadCount === 1 ? 'nuevo' : 'nuevos'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Panel del Chat Activo */}
+                  <div className="flex-1 flex flex-col bg-white">
+                    {activeChatObj ? (
+                      <>
+                        <div className="p-3 px-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-2xl">💬</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-sm text-slate-800">{activeChatObj.title}</h3>
+                                {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') ? (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                    ⏳ Solicitud Pendiente
+                                  </span>
+                                ) : (
+                                  currentUser.role === 'parent' && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-700">
+                                      {getChatSupervisionDetails(activeChatObj)?.label}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Mensajes */}
+                        <div className="flex-1 overflow-y-auto custom-scroll p-4 space-y-3 bg-slate-50/30">
+                          {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') && (
+                            <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-200 text-center mb-3">
+                              <span className="text-3xl block mb-1">⏳</span>
+                              <h4 className="text-xs font-bold text-amber-900 mb-0.5">Conversación en espera de aprobación</h4>
+                              <p className="text-[11px] text-amber-700">
+                                Un padre o tutor debe aceptar esta solicitud desde su bandeja de supervisión para que podáis comenzar a intercambiar mensajes.
+                              </p>
+                            </div>
+                          )}
+
+                          {(activeChatObj.messages || []).map(m => {
+                            const isMe = m.senderId === currentUser.id;
+                            const isSystem = m.senderId === 'system';
+                            const sender = users.find(u => u.id === m.senderId) || { name: 'Contacto', avatar: '👤', userIcon: '👤' };
+
+                            if (isSystem) {
+                              return (
+                                <div key={m.id} className="text-center my-2">
+                                  <span className="inline-block bg-slate-100 text-slate-600 text-xs px-3 py-1.5 rounded-xl border border-slate-200">
+                                    {m.text}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={m.id} className={`flex gap-2 items-end ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                {!isMe && (
+                                  <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center text-sm mb-1">
+                                    {sender.userIcon || sender.avatar}
+                                  </div>
+                                )}
+                                <div className={`max-w-[75%] rounded-3xl p-3 px-4 shadow-sm ${isMe ? activeTheme.bubbleSelf : 'bg-white border border-slate-200 text-slate-800'}`}>
+                                  {!isMe && (
+                                    <span className="text-[10px] block font-bold text-slate-400 mb-0.5">
+                                      {sender.name} {sender.username ? `(${sender.username})` : ''}
+                                    </span>
+                                  )}
+
+                                  {m.isAudio ? (
+                                    <div className="flex items-center gap-3 py-1">
+                                      {m.audioData ? (
+                                        <audio controls src={m.audioData} className="h-8 max-w-[200px]" />
+                                      ) : (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-lg">🎤</span>
+                                          <span className="text-xs font-semibold">Nota de voz</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm font-medium leading-relaxed break-words">{m.text}</p>
+                                  )}
+
+                                  <div className={`text-[9px] mt-1 text-right ${isMe ? 'text-white/70' : 'text-slate-400'}`}>
+                                    {m.time}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Si el chat está pendiente, no permitir enviar mensajes */}
+                        {(activeChatObj.approvedByParent === false || activeChatObj.status === 'pending') ? (
+                          <div className="p-3 bg-slate-100 border-t border-slate-200 text-center">
+                            <span className="text-xs font-semibold text-slate-500">
+                              🔒 Chat bloqueado hasta que los padres autoricen la solicitud
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            {/* Pegatinas */}
+                            <div className="px-4 py-1.5 bg-slate-100 border-t border-slate-200 flex items-center gap-2 overflow-x-auto">
+                              <span className="text-[11px] font-bold text-slate-400">Pegatinas:</span>
+                              {['🌟', '🎉', '🦄', '❤️', '🍦', '🚀', '⚽', '🎨'].map(sticker => (
+                                <button
+                                  key={sticker}
+                                  onClick={() => handleSendSticker(sticker)}
+                                  className="text-lg hover:scale-125 transition transform px-1"
+                                >
+                                  {sticker}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Barra de entrada */}
+                            <div className="p-3 border-t border-slate-200 flex items-center gap-2 bg-white">
+                              {isRecordingAudio ? (
+                                <div className="flex-1 flex items-center justify-between bg-purple-50 px-4 py-2 rounded-2xl border border-purple-300">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
+                                    <span className="text-xs font-bold text-purple-800">Grabando audio: {recordingSeconds}s</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => setIsRecordingAudio(false)}
+                                      className="px-3 py-1 bg-slate-200 text-xs font-bold text-slate-600 rounded-xl"
+                                    >Cancelar</button>
+                                    <button
+                                      onClick={stopRealAudioRecording}
+                                      className="px-4 py-1 bg-purple-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow"
+                                    >
+                                      <span>🚀</span> Enviar Nota
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <input
+                                    type="text"
+                                    value={messageInput}
+                                    onChange={(e) => setMessageInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                    placeholder="Escribe un mensaje..."
+                                    className="flex-1 bg-slate-100 px-4 py-2.5 rounded-2xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                  />
+
+                                  <button
+                                    onClick={startRealAudioRecording}
+                                    className="p-2.5 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded-2xl text-sm font-bold shadow-sm transition"
+                                    title="Grabar nota de voz"
+                                  >
+                                    🎤
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleSendMessage()}
+                                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold text-sm shadow-md transition"
+                                  >
+                                    Enviar
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400">
+                        <span className="text-5xl mb-3">💬</span>
+                        <h4 className="font-bold text-slate-700 text-base">Selecciona una conversación</h4>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* VISTA DEL MUSEO */}
+              {activeTab === 'museum' && (
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="bg-white/90 backdrop-blur-md rounded-3xl p-5 shadow-xl border border-purple-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-yellow-300 via-pink-400 to-purple-500 flex items-center justify-center text-3xl shadow-inner">
+                        🖼️
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800">El Museo</h2>
+                        <p className="text-xs text-slate-500 font-medium">Muro artístico vertical familiar.</p>
+                      </div>
+                    </div>
+
+                    {currentUser.role === 'minor' && (
+                      <button
+                        onClick={() => { SoundFX.playPop(); setShowPainter(true); }}
+                        className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 text-white font-bold text-sm shadow-lg flex items-center justify-center gap-2 transform active:scale-95 transition"
+                      >
+                        <span className="text-lg">🎨</span>
+                        <span>¡Pintar y Guardar!</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Feed vertical */}
+                  <div className="flex flex-col space-y-6">
+                    {visiblePosts.length === 0 ? (
+                      <div className="bg-white/80 rounded-3xl p-8 text-center border-2 border-dashed border-purple-200">
+                        <span className="text-5xl block mb-2">🎨</span>
+                        <h4 className="font-bold text-slate-700 text-base">El Museo está esperando obras</h4>
+                      </div>
+                    ) : (
+                      visiblePosts.map(post => {
+                        const author = users.find(u => u.id === post.authorId) || { name: 'Artista', avatar: '🎨', userIcon: '🎨' };
+                        const isPending = post.status === 'pending';
+                        const authorParents = (author.parentIds || []).map(pid => users.find(u => u.id === pid)?.name).filter(Boolean);
+                        const currentCommentText = commentInputs[post.id] || '';
+
+                        return (
+                          <div key={post.id} className="bg-white/95 rounded-3xl overflow-hidden shadow-xl border border-slate-200 flex flex-col transition hover:shadow-2xl">
+                            <div className="p-4 flex items-center justify-between border-b border-slate-100">
+                              <div className="flex items-center gap-3">
+                                <span className="text-2xl w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center">
+                                  {author.userIcon || author.avatar}
+                                </span>
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <h3 className="font-bold text-sm text-slate-800">{author.name}</h3>
+                                    {author.username && (
+                                      <span className="text-xs font-semibold text-purple-600">{author.username}</span>
+                                    )}
+                                  </div>
+                                  {authorParents.length > 0 && (
+                                    <p className="text-[10px] text-slate-400">
+                                      👨‍👧‍👦 A cargo de: {authorParents.join(', ')}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-xs text-slate-400 font-medium">{post.timestamp}</span>
+                            </div>
+
+                            <div className="bg-slate-50 relative flex items-center justify-center border-y border-slate-100 p-2">
+                              <img
+                                src={post.imageUrl}
+                                alt={post.title}
+                                className="w-full h-auto rounded-2xl max-h-[460px] object-contain shadow-sm bg-white"
+                              />
+                              {isPending && (
+                                <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center">
+                                  <span className="text-4xl mb-2">🛡️</span>
+                                  <p className="text-sm font-bold text-slate-800">Pendiente de Aprobación</p>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="p-5 flex flex-col">
+                              <h4 className="font-bold text-slate-800 text-lg mb-1">{post.title}</h4>
+                              {post.description && (
+                                <p className="text-sm text-slate-600 mb-4">{post.description}</p>
+                              )}
+
+                              <div className="flex items-center gap-2 py-2 border-t border-slate-100">
+                                <span className="text-xs font-bold text-slate-400 mr-1">Reaccionar:</span>
+                                {['❤️', '⭐', '🌈', '👏', '🦄'].map(sticker => (
+                                  <button
+                                    key={sticker}
+                                    onClick={() => handleAddSticker(post.id, sticker)}
+                                    className="w-9 h-9 rounded-full bg-slate-100 hover:bg-pink-100 hover:scale-125 flex items-center justify-center text-base transition transform"
+                                    title="Reaccionar"
+                                  >
+                                    {sticker}
+                                  </button>
+                                ))}
+                                <div className="ml-auto flex items-center gap-1 text-sm font-bold text-pink-600">
+                                  <span>❤️</span> {(post.likes || []).length}
+                                </div>
+                              </div>
+
+                              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                <div className="max-h-36 overflow-y-auto custom-scroll space-y-2 pr-1">
+                                  {(post.comments || []).length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">No hay comentarios aún.</p>
+                                  ) : (
+                                    post.comments.map(c => {
+                                      const cAuthor = users.find(u => u.id === c.authorId) || { name: 'Alguien', avatar: '💬', userIcon: '💬' };
+                                      return (
+                                        <div key={c.id} className="text-xs bg-slate-50 rounded-2xl p-2.5 flex items-start gap-2">
+                                          <span className="text-base">{cAuthor.userIcon || cAuthor.avatar}</span>
+                                          <div>
+                                            <div className="flex items-center gap-1">
+                                              <span className="font-bold text-slate-800">{cAuthor.name}</span>
+                                              {cAuthor.username && (
+                                                <span className="text-[10px] text-purple-600">{cAuthor.username}</span>
+                                              )}
+                                            </div>
+                                            <p className="text-slate-600 text-xs mt-0.5">{c.text}</p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 mt-2 pt-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Escribe un comentario..."
+                                    value={currentCommentText}
+                                    onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleAddComment(post.id, currentCommentText);
+                                      }
+                                    }}
+                                    className="flex-1 bg-slate-100 px-4 py-2 rounded-2xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                  />
+                                  <button
+                                    onClick={() => handleAddComment(post.id, currentCommentText)}
+                                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-bold"
+                                  >
+                                    Comentar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* VISTA DEL JUEGO */}
+              {activeTab === 'game' && (
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="bg-gradient-to-r from-purple-600 via-pink-600 to-indigo-600 rounded-3xl p-6 text-white shadow-2xl flex flex-col items-center text-center">
+                    <span className="text-6xl mb-2 animate-bounce">🦄</span>
+                    <h2 className="text-2xl font-black">Flappy Unicorn Morado</h2>
+                    <p className="text-sm text-purple-100 max-w-md mt-1 mb-5">
+                      Paso ultra amplio entre columnas (260px) en modo pantalla completa.
+                    </p>
+
+                    <button
+                      onClick={() => {
+                        SoundFX.playSuccess();
+                        setShowFullscreenGame(true);
+                      }}
+                      className="px-8 py-4 bg-yellow-400 hover:bg-yellow-300 text-purple-950 font-black text-lg rounded-3xl shadow-xl transform hover:scale-105 active:scale-95 transition flex items-center gap-3"
+                    >
+                      <span>🚀</span> ¡JUGAR EN PANTALLA COMPLETA!
+                    </button>
+                  </div>
+
+                  <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-xl border border-purple-200">
+                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2 mb-4">
+                      <span>🏆</span> Tabla de Récords
+                    </h3>
+
+                    {leaderboard.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">Aún no hay récords guardados. ¡Juega tu primera partida!</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {leaderboard
+                          .slice()
+                          .sort((a, b) => (b.score || 0) - (a.score || 0))
+                          .map((entry, idx) => {
+                            const u = users.find(user => user.id === entry.userId) || { name: 'Jugador', avatar: '🌟', userIcon: '🌟' };
+                            const isCurrent = currentUser?.id === entry.userId;
+                            return (
+                              <div
+                                key={entry.userId || idx}
+                                className={`flex items-center justify-between p-3 rounded-2xl transition ${isCurrent ? 'bg-pink-100 border-2 border-pink-300 font-bold' : 'bg-slate-50 border border-slate-100'}`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-amber-400 text-amber-950' : idx === 1 ? 'bg-slate-300 text-slate-800' : idx === 2 ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                    {idx + 1}
+                                  </span>
+                                  <span className="text-2xl">{u.userIcon || u.avatar}</span>
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-sm font-bold text-slate-800">{u.name}</p>
+                                      {u.username && <span className="text-xs text-purple-600 font-semibold">{u.username}</span>}
+                                    </div>
+                                    {isCurrent && <span className="text-[10px] text-pink-600 font-bold">(Tú)</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 font-bold text-purple-700 text-lg">
+                                  <span>{entry.score}</span>
+                                  <span className="text-xs text-purple-500 font-semibold">pts</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* VISTA DE FAMILIA Y AMIGOS */}
+              {activeTab === 'friends' && (
+                <div className="space-y-6">
+                  <div className="bg-white/90 backdrop-blur-md rounded-3xl p-5 shadow-xl border border-purple-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-3xl">
+                        👥
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-800">Círculo Familiar y Amigos</h2>
+                        <p className="text-xs text-slate-500 font-medium">Miembros del círculo familiar.</p>
+                      </div>
+                    </div>
+
+                    {currentUser.role === 'parent' && (
+                      <button
+                        onClick={() => {
+                          SoundFX.playPop();
+                          setNewMemberForm({
+                            name: '',
+                            rawUsername: '',
+                            password: '',
+                            role: 'minor',
+                            userIcon: '🚀',
+                            theme: 'unicorns',
+                            relation: ''
+                          });
+                          setModalError('');
+                          setShowAddMemberModal(true);
+                        }}
+                        className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold text-sm shadow-md flex items-center gap-2 hover:opacity-95 transition"
+                      >
+                        <span>➕</span> Crear Cuenta con Contraseña
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {users.filter(u => u.id !== currentUser.id).length === 0 ? (
+                      <div className="col-span-full bg-white/90 rounded-3xl p-8 text-center border-2 border-dashed border-slate-200">
+                        <span className="text-4xl block mb-2">👥</span>
+                        <p className="font-bold text-slate-700 text-sm">Aún no hay otros miembros en la lista.</p>
+                      </div>
+                    ) : (
+                      users
+                        .filter(u => u.id !== currentUser.id)
+                        .map(u => {
+                          const parentsList = (u.parentIds || []).map(pid => users.find(parent => parent.id === pid)?.name).filter(Boolean);
+                          const childrenList = (u.childrenIds || []).map(cid => {
+                            const ch = users.find(child => child.id === cid);
+                            return `${ch?.name || ''} ${ch?.userIcon || ''}`;
+                          }).filter(Boolean);
+
+                          return (
+                            <div key={u.id} className="bg-white/95 rounded-3xl p-5 shadow-lg border border-slate-200 flex flex-col justify-between">
+                              <div className="flex items-start gap-3">
+                                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl shadow-inner flex-shrink-0">
+                                  {u.userIcon || u.avatar}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <h3 className="font-bold text-base text-slate-800 truncate">{u.name}</h3>
+                                  </div>
+                                  {u.username && (
+                                    <span className="text-xs font-semibold text-purple-600 block">{u.username}</span>
+                                  )}
+
+                                  <div className="mt-1.5 space-y-1">
+                                    {u.role === 'parent' && (
+                                      <div className="bg-blue-50 text-blue-800 text-[11px] px-2 py-0.5 rounded-lg border border-blue-200">
+                                        <strong>Padre/Tutor:</strong> Hijos a cargo: {childrenList.join(', ') || 'Ninguno'}
+                                      </div>
+                                    )}
+                                    {u.role === 'minor' && (
+                                      <div className="bg-purple-50 text-purple-800 text-[11px] px-2 py-0.5 rounded-lg border border-purple-200">
+                                        <strong>Hijo/a de:</strong> {parentsList.join(', ') || 'Sin tutor asignado'}
+                                      </div>
+                                    )}
+                                    {u.role === 'relative' && (
+                                      <div className="bg-rose-50 text-rose-800 text-[11px] px-2 py-0.5 rounded-lg border border-rose-200">
+                                        <strong>Familiar:</strong> {u.relation || 'Pariente'}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                                  <span>🛡️</span> Conectado
+                                </span>
+
+                                <button
+                                  onClick={() => {
+                                    SoundFX.playPop();
+                                    const existing = chats.find(c => (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(u.id));
+                                    if (existing) {
+                                      setSelectedChatId(existing.id);
+                                      setActiveTab('chats');
+                                      triggerToast(`Abriendo conversación con ${u.name}`, '💬');
+                                    } else {
+                                      handleRequestNewChat(u.id);
+                                    }
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold text-xs"
+                                >
+                                  Conversar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* VISTA DE BANDEJA DE SUPERVISIÓN PARENTAL */}
+              {activeTab === 'parent_tray' && (
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-purple-900 to-indigo-900 text-white rounded-3xl p-6 shadow-2xl">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-2xl">🛡️</span>
+                          <span className="text-xs uppercase font-bold tracking-widest text-purple-300">Supervisión Parental</span>
+                        </div>
+                        <h2 className="text-2xl font-black">Bandeja de Aprobaciones</h2>
+                        <p className="text-xs text-purple-200 max-w-xl mt-1">
+                          Hijos a cargo: {(currentUser.childrenIds || []).map(id => users.find(u => u.id === id)?.name).filter(Boolean).join(' y ') || 'Ninguno asignado'}.
+                        </p>
+                      </div>
+
+                      <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 text-center">
+                        <span className="text-xs text-purple-200 block font-semibold">Pendientes</span>
+                        <span className="text-2xl font-black text-amber-300">{parentPendingQueue.length}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-purple-200">
+                    <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                      <span>📬</span> Solicitudes Pendientes
+                    </h3>
+
+                    {parentPendingQueue.length === 0 ? (
+                      <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <span className="text-4xl block mb-2">🎉</span>
+                        <p className="font-bold text-slate-700 text-sm">No hay solicitudes pendientes.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {parentPendingQueue.map(req => {
+                          const child = users.find(u => u.id === req.childId) || { name: 'Hijo/a' };
+                          const target = req.targetUserId ? users.find(u => u.id === req.targetUserId) : null;
+                          const post = req.postId ? posts.find(p => p.id === req.postId) : null;
+
+                          return (
+                            <div key={req.id} className="p-4 rounded-2xl border-2 border-purple-100 bg-white shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                              <div className="flex items-start gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center text-2xl flex-shrink-0">
+                                  {req.type === 'new_chat_permission' ? '💬' : req.type === 'post_approval' ? '🎨' : '🤝'}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-sm text-slate-800">
+                                      {req.type === 'new_chat_permission' && `Permiso de chat para ${child.name} ➡️ ${target?.name || 'Contacto'}`}
+                                      {req.type === 'post_approval' && `Dibujo de ${child.name}: "${req.title}"`}
+                                    </span>
+                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-semibold">
+                                      {req.timestamp}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 mt-1 font-medium">{req.reason}</p>
+
+                                  {post && (
+                                    <div className="mt-2 w-32 h-20 rounded-xl overflow-hidden border border-slate-200">
+                                      <img src={post.imageUrl} alt="preview" className="w-full h-full object-cover" />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                                <button
+                                  onClick={() => handleRejectParentRequest(req.id, req.postId, req.chatId)}
+                                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-red-50 text-red-600 font-bold text-xs"
+                                >
+                                  Rechazar
+                                </button>
+                                <button
+                                  onClick={() => handleApproveParentRequest(req)}
+                                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs shadow-md flex items-center gap-1.5"
+                                >
+                                  <span>✅</span> Aprobar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-purple-200">
+                    <h3 className="font-bold text-lg text-slate-800 mb-2 flex items-center gap-2">
+                      <span>👁️</span> Auditoría de Conversaciones
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                      {chats.map(c => {
+                        const ownership = getChatSupervisionDetails(c);
+                        const lastMsg = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
+                        return (
+                          <div key={c.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-sm text-slate-800">{c.title}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded border ${ownership?.badgeBg}`}>
+                                {ownership?.label}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 line-clamp-2 italic bg-white p-2 rounded-xl border border-slate-100">
+                              Último: {lastMsg ? (lastMsg.isAudio ? '🎤 Nota de audio' : lastMsg.text) : 'Sin mensajes'}
+                            </div>
+                            <button
+                              onClick={() => {
+                                SoundFX.playPop();
+                                setSelectedChatId(c.id);
+                                setActiveTab('chats');
+                              }}
+                              className="w-full text-center py-1.5 bg-white hover:bg-purple-50 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 transition"
+                            >
+                              Inspeccionar Conversación 🔍
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* VISTA DE CONFIGURACIÓN DE TEMA */}
+              {activeTab === 'settings' && (
+                <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 shadow-xl border border-purple-200 max-w-xl mx-auto space-y-6">
+                  <div className="text-center">
+                    <span className="text-4xl block mb-2">🎨</span>
+                    <h2 className="text-2xl font-bold text-slate-800">Elige tu Fondo Temático</h2>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.values(THEMES).map(th => {
+                      const isSelected = currentUser.theme === th.id;
+                      return (
+                        <div
+                          key={th.id}
+                          onClick={() => handleThemeChange(th.id)}
+                          className={`p-6 rounded-3xl border-4 cursor-pointer transition-all transform hover:scale-105 flex flex-col items-center justify-center text-center gap-2 ${
+                            isSelected
+                              ? 'border-purple-500 bg-gradient-to-br from-white to-purple-100 shadow-xl'
+                              : 'border-slate-200 bg-white hover:border-purple-200'
+                          }`}
+                        >
+                          <span className="text-5xl">{th.icon}</span>
+                          <h3 className="font-bold text-slate-800 text-base">{th.name}</h3>
+                          {isSelected && (
+                            <span className="bg-purple-600 text-white text-[11px] font-bold px-3 py-0.5 rounded-full mt-1">
+                              Activo
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </main>
+          </div>
+
+          {/* Barra de navegación inferior móvil */}
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+            <button
+              onClick={() => { SoundFX.playPop(); setActiveTab('chats'); }}
+              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'chats' ? 'text-purple-600' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">💬</span>
+              <span className="text-[10px]">Chats</span>
+              {totalUnreadChatsCount > 0 && (
+                <span className="absolute -top-1 right-1 bg-pink-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
+                  {totalUnreadChatsCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => { SoundFX.playPop(); setActiveTab('museum'); }}
+              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition ${activeTab === 'museum' ? 'text-purple-600' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">🖼️</span>
+              <span className="text-[10px]">Museo</span>
+            </button>
+
+            <button
+              onClick={() => {
+                SoundFX.playPop();
+                setShowFullscreenGame(true);
+              }}
+              className="flex flex-col items-center p-1 rounded-xl text-xs font-bold text-purple-600 transform scale-110"
+            >
+              <span className="text-2xl animate-pulse">🦄</span>
+              <span className="text-[10px] font-black">Juego</span>
+            </button>
+
+            <button
+              onClick={() => { SoundFX.playPop(); setActiveTab('friends'); }}
+              className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition ${activeTab === 'friends' ? 'text-purple-600' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">👥</span>
+              <span className="text-[10px]">Familia</span>
+            </button>
+
+            {currentUser.role === 'parent' ? (
+              <button
+                onClick={() => { SoundFX.playPop(); setActiveTab('parent_tray'); }}
+                className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition relative ${activeTab === 'parent_tray' ? 'text-red-600' : 'text-slate-400'}`}
+              >
+                <span className="text-xl">🛡️</span>
+                <span className="text-[10px]">Supervisión</span>
+                {parentPendingQueue.length > 0 && (
+                  <span className="absolute top-0 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => { SoundFX.playPop(); setActiveTab('settings'); }}
+                className={`flex flex-col items-center p-1 rounded-xl text-xs font-bold transition ${activeTab === 'settings' ? 'text-purple-600' : 'text-slate-400'}`}
+              >
+                <span className="text-xl">🎨</span>
+                <span className="text-[10px]">Fondo</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleLogout}
+              className="flex flex-col items-center p-1 rounded-xl text-xs font-bold text-red-500 transition"
+              title="Cerrar Sesión"
+            >
+              <span className="text-xl">🔒</span>
+              <span className="text-[10px]">Salir</span>
+            </button>
+          </nav>
+
+          {/* Modal del Juego Flappy Unicorn */}
+          {showFullscreenGame && (
+            <FullscreenFlappyUnicorn
+              currentUser={currentUser}
+              leaderboard={leaderboard}
+              onUpdateScore={handleUpdateScore}
+              onClose={() => setShowFullscreenGame(false)}
+            />
+          )}
+
+          {/* Modal del Taller de Dibujo */}
+          {showPainter && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <MiniCanvasPainter
+                onSave={handleSaveDrawing}
+                onCancel={() => setShowPainter(false)}
+              />
+            </div>
+          )}
+
+          {/* Modal de Solicitud de Chat */}
+          {showRequestChatModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border-4 border-purple-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-bold text-purple-900 flex items-center gap-2">
+                    <span>💬</span> Abrir Conversación
+                  </h3>
+                  <button onClick={() => setShowRequestChatModal(false)} className="text-slate-400 text-lg">✕</button>
+                </div>
+                <div className="space-y-2 mb-4">
+                  <label className="text-xs font-bold text-slate-700 block">Selecciona el contacto:</label>
+                  <select
+                    className="w-full p-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
+                    onChange={(e) => setRequestChatTarget(e.target.value)}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Selecciona un contacto...</option>
+                    {users
+                      .filter(u => u.id !== currentUser.id)
+                      .map(u => {
+                        const hasChat = chats.some(c => (c.participants || []).includes(currentUser.id) && (c.participants || []).includes(u.id));
+                        return (
+                          <option key={u.id} value={u.id}>
+                            {u.name} {u.username ? `(${u.username})` : ''} {hasChat ? '• (Ya existe conversación)' : ''}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowRequestChatModal(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold text-slate-600"
+                  >Cancelar</button>
+                  <button
+                    onClick={() => handleRequestNewChat(requestChatTarget)}
+                    className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold shadow"
+                  >
+                    Abrir o Solicitar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

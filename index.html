@@ -254,6 +254,102 @@
       </div>
     );
 
+    // --- REPRODUCTOR DE NOTAS DE VOZ RESISTENTE Y COMPATIBLE ---
+    const VoiceNotePlayer = ({ audioData, duration = 3, isMe }) => {
+      const [isPlaying, setIsPlaying] = React.useState(false);
+      const [playbackError, setPlaybackError] = React.useState(false);
+      const audioRef = React.useRef(null);
+
+      React.useEffect(() => {
+        return () => {
+          if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+          }
+        };
+      }, []);
+
+      const togglePlay = () => {
+        if (!audioData) {
+          setPlaybackError(true);
+          return;
+        }
+
+        if (isPlaying) {
+          if (audioRef.current) audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          try {
+            if (!audioRef.current) {
+              const audio = new Audio(audioData);
+              audioRef.current = audio;
+              audio.onended = () => setIsPlaying(false);
+              audio.onerror = () => {
+                setIsPlaying(false);
+                setPlaybackError(true);
+              };
+            }
+            setPlaybackError(false);
+            audioRef.current.play()
+              .then(() => setIsPlaying(true))
+              .catch(err => {
+                console.warn("Fallo al reproducir audio:", err);
+                setIsPlaying(false);
+                setPlaybackError(true);
+              });
+          } catch (e) {
+            setPlaybackError(true);
+            setIsPlaying(false);
+          }
+        }
+      };
+
+      if (playbackError || !audioData) {
+        return (
+          <div className={`flex items-center gap-2 py-1.5 px-3 rounded-2xl text-xs font-semibold ${isMe ? 'bg-black/20 text-white' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+            <span>⚠️</span>
+            <span>Audio no disponible o incompatible</span>
+          </div>
+        );
+      }
+
+      return (
+        <div className={`flex items-center gap-3 py-1.5 px-3 rounded-2xl select-none ${isMe ? 'bg-white/20 text-white' : 'bg-purple-50 text-purple-900 border border-purple-200'}`}>
+          <button
+            type="button"
+            onClick={togglePlay}
+            className={`w-9 h-9 rounded-full flex items-center justify-center text-sm shadow-md transition transform active:scale-90 flex-shrink-0 ${
+              isMe ? 'bg-white text-purple-700' : 'bg-purple-600 text-white'
+            }`}
+            title={isPlaying ? "Pausar" : "Escuchar nota de voz"}
+          >
+            {isPlaying ? '⏸️' : '▶️'}
+          </button>
+
+          <div className="flex flex-col gap-1 min-w-[125px]">
+            <div className="flex items-center gap-0.5 h-4">
+              {[40, 75, 50, 90, 60, 100, 45, 80, 65, 30, 85, 55].map((h, i) => (
+                <span
+                  key={i}
+                  className={`w-1 rounded-full transition-all duration-300 ${
+                    isMe ? 'bg-white' : 'bg-purple-600'
+                  } ${isPlaying ? 'animate-pulse' : 'opacity-50'}`}
+                  style={{
+                    height: isPlaying ? `${Math.max(25, (h + (i % 3) * 18) % 100)}%` : `${h * 0.45}%`,
+                    animationDelay: `${i * 60}ms`
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between items-center text-[10px] opacity-80 font-bold">
+              <span>{isPlaying ? 'Escuchando...' : 'Nota de voz'}</span>
+              <span>{duration ? `${duration}s` : '0:03'}</span>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     // --- LIENZO DE DIBUJO ---
     const MiniCanvasPainter = ({ onSave, onCancel }) => {
       const canvasRef = React.useRef(null);
@@ -1296,37 +1392,68 @@
 
       const handleSendSticker = (emoji) => handleSendMessage(emoji, false);
 
-      // --- GRABACIÓN DE AUDIO REAL CON MICRÓFONO ---
+      // --- GRABACIÓN DE AUDIO REAL CON MICRÓFONO Y DETECCIÓN DE FORMATO MULTIPLATAFORMA ---
       const startRealAudioRecording = async () => {
         try {
-          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (e) => {
-              if (e.data.size > 0) audioChunksRef.current.push(e.data);
-            };
-
-            mediaRecorder.onstop = () => {
-              const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-              const reader = new FileReader();
-              reader.readAsDataURL(audioBlob);
-              reader.onloadend = () => {
-                handleSendMessage('', true, reader.result);
-              };
-              stream.getTracks().forEach(track => track.stop());
-            };
-
-            mediaRecorder.start();
-            setIsRecordingAudio(true);
-            SoundFX.playPop();
-          } else {
-            setIsRecordingAudio(true);
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            triggerToast('Tu navegador no permite grabar notas de voz', '⚠️');
+            return;
           }
-        } catch (err) {
+
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+          // Detección automática del mejor formato compatible (Chrome, Safari iOS, Firefox)
+          let mimeType = '';
+          const candidates = [
+            'audio/mp4',
+            'audio/aac',
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg'
+          ];
+          for (const t of candidates) {
+            if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
+              mimeType = t;
+              break;
+            }
+          }
+
+          const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            const finalType = mimeType || mediaRecorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunksRef.current, { type: finalType });
+
+            if (audioBlob.size === 0) {
+              triggerToast('No se grabó ningún sonido', '⚠️');
+              return;
+            }
+
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = () => {
+              handleSendMessage('', true, reader.result);
+            };
+            stream.getTracks().forEach(track => track.stop());
+          };
+
+          mediaRecorder.start();
           setIsRecordingAudio(true);
+          SoundFX.playPop();
+        } catch (err) {
+          console.error("Error accediendo al micrófono:", err);
+          let errorMsg = 'No se pudo acceder al micrófono.';
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            errorMsg = 'Permiso de micrófono denegado en tu navegador.';
+          }
+          triggerToast(errorMsg, '🎙️');
+          setIsRecordingAudio(false);
         }
       };
 
@@ -1334,7 +1461,7 @@
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
           mediaRecorderRef.current.stop();
         } else {
-          handleSendMessage('', true, null);
+          setIsRecordingAudio(false);
         }
         setIsRecordingAudio(false);
         SoundFX.playSuccess();
@@ -2232,16 +2359,11 @@
                                   )}
 
                                   {m.isAudio ? (
-                                    <div className="flex items-center gap-3 py-1">
-                                      {m.audioData ? (
-                                        <audio controls src={m.audioData} className="h-8 max-w-[190px]" />
-                                      ) : (
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-lg">🎤</span>
-                                          <span className="text-xs font-semibold">Nota de voz</span>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <VoiceNotePlayer
+                                      audioData={m.audioData}
+                                      duration={m.duration}
+                                      isMe={isMe}
+                                    />
                                   ) : (
                                     <p className="text-sm font-medium leading-relaxed break-words">{m.text}</p>
                                   )}
